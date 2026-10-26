@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Bijjam Charan Kumar Reddy | Student &amp; Python Developer Portfolio</title>
+  <meta name="description" content="Personal portfolio of Bijjam Charan Kumar Reddy, a second-year engineering student with intermediate Python skills developing practical CLI and GUI projects.">
+  <meta name="author" content="Bijjam Charan Kumar Reddy">
+
+  <!-- Favicon / SVG Icon -->
+  <link rel="icon" type="image/svg+xml" href="assets/images/avatar.svg">
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ========================================================================
+       Navigation Bar
+       ======================================================================== -->
+  <header class="site-header" id="siteHeader">
+    <div class="container nav-container">
+      <!-- Brand Monogram -->
+      <a href="#home" class="brand-link" aria-label="Bijjam Charan Kumar Reddy - Home">
+        <span class="brand-badge">BC</span>
+        <span class="brand-text">Charan<span class="brand-dot">.execute</span></span>
+      </a>
+
+      <!-- Desktop & Mobile Navigation Links -->
+      <nav class="nav-menu" id="mainNavMenu" aria-label="Main Navigation">
+        <a href="#home" class="nav-link active">Home</a>
+        <a href="#about" class="nav-link">About</a>
+        <a href="#projects" class="nav-link">Projects</a>
+        <a href="#stats" class="nav-link">Stats</a>
+        <a href="#contact" class="nav-link">Contact</a>
+      </nav>
+
+      <!-- Header Actions: Theme Toggle & Mobile Hamburger -->
+      <div class="header-actions">
+        <!-- Theme Toggle Button -->
+        <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle dark/light theme" title="Toggle theme">
+          <!-- Sun Icon (shown in dark theme to switch to light) -->
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <!-- Moon Icon (shown in light theme to switch to dark) -->
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+
+        <!-- Mobile Menu Toggle Button -->
+        <button type="button" class="mobile-nav-toggle" id="mobileNavToggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="mainNavMenu">
+          <span class="hamburger-icon">
+            <span class="hamburger-line"></span>
+            <span class="hamburger-line"></span>
+            <span class="hamburger-line"></span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ======================================================================
+         3. Hero Section
+         ====================================================================== -->
+    <section class="section hero-section" id="home">
+      <div class="container hero-grid">
+        <!-- Hero Introduction Content -->
+        <div class="hero-content">
+          <div class="hero-badge-wrap">
+            <span class="hero-badge">
+              <span class="hero-pulse-dot" aria-hidden="true"></span>
+              Engineering Student &bull; Python Learner
+            </span>
+          </div>
+
+          <h1 class="hero-title">
+            Hi, I'm <br>
+            <span class="gradient-text">Bijjam Charan Kumar Reddy</span>
+          </h1>
+
+          <div class="hero-role-wrapper" aria-label="Current focus">
+            <span>Focus:</span>
+            <span class="hero-role-text" id="heroRoleText">Second-Year Student</span>
+            <span class="typing-cursor" aria-hidden="true"></span>
+          </div>
+
+          <p class="hero-description">
+            I'm a second-year student with intermediate Python skills. I build small CLI and GUI projects while learning how to write clearer, more useful code.
+          </p>
+
+          <div class="hero-actions">
+            <a href="#projects" class="btn btn-primary">
+              <svg class="btn-icon" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+              <span>View Projects</span>
+            </a>
+
+            <!-- GitHub Repositories Link -->
+            <a href="https://github.com/bijjamcharan09-cyber?tab=repositories" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" title="Visit GitHub Repositories">
+              <svg class="btn-icon" viewBox="0 0 24 24">
+                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+              </svg>
+              <span>GitHub Repositories</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Hero Visual Avatar -->
+        <div class="hero-visual">
+          <div class="avatar-card">
+            <div class="avatar-glow" aria-hidden="true"></div>
+
+            <!-- Top floating chip -->
+            <div class="floating-chip floating-chip-top">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+              <span>Python 3.15</span>
+            </div>
+
+            <!-- Initials Monogram Avatar (User can replace src with a photo if desired) -->
+            <div class="avatar-img-container">
+              <img src="assets/images/avatar.svg" alt="Bijjam Charan Kumar Reddy avatar monogram" class="avatar-img" width="240" height="240">
+            </div>
+
+            <!-- Bottom floating chip -->
+            <div class="floating-chip floating-chip-bottom">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line></svg>
+              <span>CLI + GUI</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         5. About Section & Skills
+         ====================================================================== -->
+    <section class="section" id="about">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">About Me</span>
+          <h2 class="section-title">Developing Skills Through Practice</h2>
+          <p class="section-subtitle">A realistic look at where I am today and what I am currently working to understand.</p>
+        </div>
+
+        <div class="about-grid">
+          <!-- Student Narrative Card -->
+          <article class="glass-card about-card">
+            <h3 class="skills-heading">
+              <svg class="skills-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <span>My Background &amp; Focus</span>
+            </h3>
+
+            <p class="about-p">
+              I am a second-year engineering student steadily building my foundation in software development. My primary learning approach revolves around hands-on programming: turning theoretical concepts from my coursework into functional, small-scale computer programs.
+            </p>
+
+            <p class="about-p">
+              I enjoy creating command-line tools and desktop graphical interfaces, experimenting with Python libraries, and focusing on writing clearer, structured, and more maintainable code with every iteration.
+            </p>
+
+            <div class="about-highlights">
+              <div class="highlight-item">
+                <svg class="highlight-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <div>
+                  <div class="highlight-text">Practical Coursework Application</div>
+                  <div class="highlight-sub">Transforming classroom algorithms and logic into working software.</div>
+                </div>
+              </div>
+
+              <div class="highlight-item">
+                <svg class="highlight-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <div>
+                  <div class="highlight-text">Clean Code &amp; Usability</div>
+                  <div class="highlight-sub">Focusing on error handling, input validation, and readable naming.</div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- Skills Card -->
+          <article class="glass-card skills-card">
+            <!-- Current Skills -->
+            <div class="skills-category">
+              <h3 class="skills-heading">
+                <svg class="skills-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                <span>Current Skills</span>
+              </h3>
+              <div class="skills-tags-wrap">
+                <div class="skill-tag">
+                  <span>Python</span>
+                  <span class="skill-level-badge level-intermediate">Intermediate</span>
+                </div>
+                <div class="skill-tag">
+                  <span>HTML5</span>
+                  <span class="skill-level-badge level-learning">Learning</span>
+                </div>
+                <div class="skill-tag">
+                  <span>CSS3</span>
+                  <span class="skill-level-badge level-learning">Learning</span>
+                </div>
+                <div class="skill-tag">
+                  <span>JavaScript</span>
+                  <span class="skill-level-badge level-learning">Learning</span>
+                </div>
+                <div class="skill-tag">
+                  <span>Git</span>
+                  <span class="skill-level-badge level-learning">Learning</span>
+                </div>
+                <div class="skill-tag">
+                  <span>VS Code</span>
+                  <span class="skill-level-badge level-learning">Learning</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Also Exploring -->
+            <div class="skills-category">
+              <h3 class="skills-heading">
+                <svg class="skills-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                <span>Also Exploring</span>
+              </h3>
+              <div class="skills-tags-wrap">
+                <div class="skill-tag">
+                  <span>SQL</span>
+                  <span class="skill-level-badge level-exploring">Exploring</span>
+                </div>
+                <div class="skill-tag">
+                  <span>Pandas</span>
+                  <span class="skill-level-badge level-exploring">Exploring</span>
+                </div>
+                <div class="skill-tag">
+                  <span>Tkinter</span>
+                  <span class="skill-level-badge level-exploring">Exploring</span>
+                </div>
+                <div class="skill-tag">
+                  <span>REST APIs</span>
+                  <span class="skill-level-badge level-exploring">Exploring</span>
+                </div>
+                <div class="skill-tag">
+                  <span>Linux</span>
+                  <span class="skill-level-badge level-exploring">Exploring</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         6. Projects Section (with Search & Filtering)
+         ====================================================================== -->
+    <section class="section" id="projects">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Projects</span>
+          <h2 class="section-title">Small, Practical Applications</h2>
+          <p class="section-subtitle">Real coding projects built to strengthen problem-solving, data persistence, and interface design in Python.</p>
+        </div>
+
+        <!-- Filter & Search Controls -->
+        <div class="projects-controls">
+          <!-- Search Input Box -->
+          <div class="search-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" id="projectSearchInput" class="search-input" placeholder="Search projects by name or description..." aria-label="Search projects">
+            <button type="button" id="searchClearBtn" class="search-clear-btn" aria-label="Clear search input">&times;</button>
+          </div>
+
+          <!-- Category Filter Buttons -->
+          <div class="filter-group" role="tablist" aria-label="Filter projects by interface type">
+            <button type="button" class="filter-btn active" data-filter="all">All Projects</button>
+            <button type="button" class="filter-btn" data-filter="cli">CLI Projects</button>
+            <button type="button" class="filter-btn" data-filter="gui">GUI Projects</button>
+          </div>
+        </div>
+
+        <!-- Projects Grid -->
+        <div class="projects-grid" id="projectsGrid">
+          <!-- Project 1: Expense Tracker -->
+          <article class="glass-card project-card" data-type="gui" data-title="Expense Tracker" data-desc="A desktop application for tracking daily expenses and understanding spending habits.">
+            <div class="project-badges">
+              <span class="p-badge badge-gui">GUI</span>
+              <span class="p-badge badge-intermediate">Intermediate</span>
+              <span class="p-badge badge-python">Python</span>
+            </div>
+
+            <h3 class="project-title">Expense Tracker</h3>
+            <p class="project-desc">A desktop application for tracking daily expenses and understanding spending habits.</p>
+
+            <h4 class="project-features-title">Key Features</h4>
+            <ul class="project-features">
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Add and delete expenses.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Filter expenses by category.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>View monthly spending summaries.</span>
+              </li>
+            </ul>
+
+            <div class="project-actions">
+              <button type="button" class="btn btn-outline btn-sm btn-view-code" data-project="expense-tracker">
+                <svg class="btn-icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                <span>View Demo Code</span>
+              </button>
+              <a href="https://github.com/bijjamcharan09-cyber/python_lab/tree/master/expense_tracker" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View repository on GitHub">
+                <svg class="btn-icon" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                <span>GitHub</span>
+              </a>
+            </div>
+          </article>
+
+          <!-- Project 2: Student Management System -->
+          <article class="glass-card project-card" data-type="gui" data-title="Student Management System" data-desc="An application for organizing student records, grades, and enrollment information.">
+            <div class="project-badges">
+              <span class="p-badge badge-gui">GUI</span>
+              <span class="p-badge badge-intermediate">Intermediate</span>
+              <span class="p-badge badge-python">Python</span>
+            </div>
+
+            <h3 class="project-title">Student Management System</h3>
+            <p class="project-desc">An application for organizing student records, grades, and enrollment information.</p>
+
+            <h4 class="project-features-title">Key Features</h4>
+            <ul class="project-features">
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Create, view, update, and delete student records.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Calculate grades.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Save student data.</span>
+              </li>
+            </ul>
+
+            <div class="project-actions">
+              <button type="button" class="btn btn-outline btn-sm btn-view-code" data-project="student-management">
+                <svg class="btn-icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                <span>View Demo Code</span>
+              </button>
+              <a href="https://github.com/bijjamcharan09-cyber/student_web/tree/master/student_system" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View repository on GitHub">
+                <svg class="btn-icon" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                <span>GitHub</span>
+              </a>
+            </div>
+          </article>
+
+          <!-- Project 3: To-Do List -->
+          <article class="glass-card project-card" data-type="cli" data-title="To-Do List" data-desc="A command-line application for organizing everyday tasks.">
+            <div class="project-badges">
+              <span class="p-badge badge-cli">CLI</span>
+              <span class="p-badge badge-beginner">Beginner</span>
+              <span class="p-badge badge-python">Python</span>
+            </div>
+
+            <h3 class="project-title">To-Do List</h3>
+            <p class="project-desc">A command-line application for organizing everyday tasks.</p>
+
+            <h4 class="project-features-title">Key Features</h4>
+            <ul class="project-features">
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Add tasks.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Mark tasks as completed.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Delete tasks.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Set task priorities.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Save tasks.</span>
+              </li>
+            </ul>
+
+            <div class="project-actions">
+              <button type="button" class="btn btn-outline btn-sm btn-view-code" data-project="todo-list">
+                <svg class="btn-icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                <span>View Demo Code</span>
+              </button>
+              <a href="https://github.com/bijjamcharan09-cyber/python_project/blob/main/to_do_list.py" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View repository on GitHub">
+                <svg class="btn-icon" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                <span>GitHub</span>
+              </a>
+            </div>
+          </article>
+
+          <!-- Project 4: Password Generator -->
+          <article class="glass-card project-card" data-type="cli" data-title="Password Generator" data-desc="A command-line tool for generating customizable passwords.">
+            <div class="project-badges">
+              <span class="p-badge badge-cli">CLI</span>
+              <span class="p-badge badge-beginner">Beginner</span>
+              <span class="p-badge badge-python">Python</span>
+            </div>
+
+            <h3 class="project-title">Password Generator</h3>
+            <p class="project-desc">A command-line tool for generating customizable passwords.</p>
+
+            <h4 class="project-features-title">Key Features</h4>
+            <ul class="project-features">
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Choose password length.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Select character sets.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Check password strength.</span>
+              </li>
+              <li class="feature-bullet">
+                <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Copy generated password where supported.</span>
+              </li>
+            </ul>
+
+            <div class="project-actions">
+              <button type="button" class="btn btn-outline btn-sm btn-view-code" data-project="password-generator">
+                <svg class="btn-icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                <span>View Demo Code</span>
+              </button>
+              <a href="https://github.com/bijjamcharan09-cyber/python_lab/tree/master/password_manager" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View repository on GitHub">
+                <svg class="btn-icon" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                <span>GitHub</span>
+              </a>
+            </div>
+          </article>
+
+          <!-- Empty State (No matches found) -->
+          <div class="glass-card no-results-state" id="noResultsState">
+            <svg class="no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+            <h3 class="no-results-title">No Projects Found</h3>
+            <p class="no-results-desc">No projects match your current search query or filter selection. Try adjusting your search keywords.</p>
+            <button type="button" class="btn btn-primary btn-sm" id="resetFiltersBtn">Reset All Filters</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         10. Stats Section
+         ====================================================================== -->
+    <section class="section" id="stats">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Key Numbers</span>
+          <h2 class="section-title">Current Journey at a Glance</h2>
+          <p class="section-subtitle">Real milestones reflecting my ongoing learning path as an engineering student.</p>
+        </div>
+
+        <div class="stats-grid">
+          <!-- Card 1 -->
+          <article class="glass-card stat-card">
+            <div class="stat-number gradient-text">4</div>
+            <div class="stat-label">Python Projects</div>
+          </article>
+
+          <!-- Card 2 -->
+          <article class="glass-card stat-card">
+            <div class="stat-number gradient-text">2nd</div>
+            <div class="stat-label">Year of Study</div>
+          </article>
+
+          <!-- Card 3 -->
+          <article class="glass-card stat-card">
+            <div class="stat-number gradient-text">Intermediate</div>
+            <div class="stat-label">Python Skill Level</div>
+          </article>
+
+          <!-- Card 4 -->
+          <article class="glass-card stat-card">
+            <div class="stat-number gradient-text">CLI + GUI</div>
+            <div class="stat-label">Project Types</div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         11. Contact Section
+         ====================================================================== -->
+    <section class="section" id="contact">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Get In Touch</span>
+          <h2 class="section-title">Let's Connect</h2>
+          <p class="section-subtitle">Feel free to reach out for project feedback, discussions on Python learning, or student collaboration.</p>
+        </div>
+
+        <div class="contact-grid">
+          <!-- Contact Channels Info -->
+          <div class="glass-card contact-info-card">
+            <h3 class="contact-info-title">Contact Channels</h3>
+            <p class="contact-info-desc">
+              I check my email regularly and welcome conversations about code, study tips, or constructive suggestions on my projects.
+            </p>
+
+            <div class="contact-methods">
+              <!-- Email (mailto link) -->
+              <a href="mailto:bijjamcharan09@gmail.com" class="contact-method-item" title="Send email to Bijjam Charan Kumar Reddy">
+                <div class="contact-icon-box">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                </div>
+                <div>
+                  <div class="contact-method-label">Direct Email</div>
+                  <div class="contact-method-val">bijjamcharan09@gmail.com</div>
+                </div>
+              </a>
+
+              <!-- GitHub Repositories -->
+              <a href="https://github.com/bijjamcharan09-cyber?tab=repositories" target="_blank" rel="noopener noreferrer" class="contact-method-item" title="GitHub Repositories">
+                <div class="contact-icon-box">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                </div>
+                <div>
+                  <div class="contact-method-label">GitHub Repositories</div>
+                  <div class="contact-method-val">github.com/bijjamcharan09-cyber</div>
+                </div>
+              </a>
+
+              <!-- LinkedIn Profile -->
+              <a href="https://www.linkedin.com/in/charan-kumar-reddy-bijjam-999b5a394/" target="_blank" rel="noopener noreferrer" class="contact-method-item" title="LinkedIn Profile">
+                <div class="contact-icon-box">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>
+                </div>
+                <div>
+                  <div class="contact-method-label">LinkedIn Profile</div>
+                  <div class="contact-method-val">linkedin.com/in/charan-kumar-reddy-bijjam</div>
+                </div>
+              </a>
+            </div>
+          </div>
+
+          <!-- Contact Form with Validation & Honest Backend Notice -->
+          <div class="glass-card contact-form-card">
+            <h3 class="contact-info-title">Send a Message</h3>
+            <p class="contact-info-desc">Fill out the fields below to compose an inquiry or note.</p>
+
+            <form id="portfolioContactForm" novalidate>
+              <!-- Name Input -->
+              <div class="form-group">
+                <label for="formName" class="form-label">Your Name</label>
+                <input type="text" id="formName" class="form-input" placeholder="e.g. Alex Smith" required>
+                <div class="field-error-msg" id="nameError"></div>
+              </div>
+
+              <!-- Email Input -->
+              <div class="form-group">
+                <label for="formEmail" class="form-label">Email Address</label>
+                <input type="email" id="formEmail" class="form-input" placeholder="e.g. alex@example.com" required>
+                <div class="field-error-msg" id="emailError"></div>
+              </div>
+
+              <!-- Subject Input -->
+              <div class="form-group">
+                <label for="formSubject" class="form-label">Subject</label>
+                <input type="text" id="formSubject" class="form-input" placeholder="e.g. Question about Python Expense Tracker" required>
+                <div class="field-error-msg" id="subjectError"></div>
+              </div>
+
+              <!-- Message Textarea -->
+              <div class="form-group">
+                <label for="formMessage" class="form-label">Message</label>
+                <textarea id="formMessage" class="form-textarea" placeholder="Write your message here..." required></textarea>
+                <div class="field-error-msg" id="messageError"></div>
+              </div>
+
+              <button type="submit" class="btn btn-primary" style="width: 100%;">
+                <svg class="btn-icon" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                <span>Send Message</span>
+              </button>
+
+              <!-- Honest Static Notice & Direct Mail Client Action -->
+              <div class="form-feedback-notice" id="formFeedbackNotice" role="alert">
+                <strong>Static Portfolio Notice:</strong>
+                This website is a client-side static portfolio without a server backend; messages are not automatically dispatched to a server.
+                To deliver your message immediately, click below to open your preferred email client pre-filled with your message:
+                <div style="margin-top: 12px;">
+                  <a href="#" id="emailClientBtn" class="btn btn-primary btn-sm">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                    <span>Open in Email App</span>
+                  </a>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ========================================================================
+       8. Demo Code Preview Modal Dialog
+       ======================================================================== -->
+  <div class="code-modal-backdrop" id="codeModalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalProjectTitle" aria-hidden="true">
+    <div class="code-modal">
+      <div class="code-modal-header">
+        <div class="modal-title-area">
+          <h3 class="modal-project-title" id="modalProjectTitle">Project Code</h3>
+          <span class="sample-notice-badge">Sample Demonstration</span>
+        </div>
+        <div class="modal-header-actions">
+          <button type="button" class="copy-btn" id="modalCopyBtn" title="Copy code snippet to clipboard">
+            <svg class="btn-icon" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span>Copy Code</span>
+          </button>
+          <button type="button" class="modal-close-btn" id="modalCloseBtn" aria-label="Close code preview modal">&times;</button>
+        </div>
+      </div>
+
+      <div class="code-modal-notice">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        <span><strong>Notice:</strong> This code is a sample demonstration illustrating project structure and logic, not the full proprietary repository.</span>
+      </div>
+
+      <div class="code-modal-body">
+        <pre class="code-pre"><code id="modalCodeContent"># Loading code...</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Back to Top Button
+       ======================================================================== -->
+  <button type="button" class="back-to-top" id="backToTopBtn" aria-label="Scroll back to top of page" title="Back to top">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
+  </button>
+
+  <!-- ========================================================================
+       Footer
+       ======================================================================== -->
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-brand-wrap">
+        <div class="footer-name">Bijjam Charan Kumar Reddy</div>
+        <div class="footer-note">Second-Year Student &bull; Intermediate Python Skills</div>
+      </div>
+
+      <div class="footer-socials">
+        <!-- GitHub Link -->
+        <a href="https://github.com/bijjamcharan09-cyber?tab=repositories" target="_blank" rel="noopener noreferrer" class="footer-icon-link" aria-label="GitHub Repositories" title="GitHub">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+        </a>
+        <!-- LinkedIn Link -->
+        <a href="https://www.linkedin.com/in/charan-kumar-reddy-bijjam-999b5a394/" target="_blank" rel="noopener noreferrer" class="footer-icon-link" aria-label="LinkedIn Profile" title="LinkedIn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>
+        </a>
+        <!-- Direct Email -->
+        <a href="mailto:bijjamcharan09@gmail.com" class="footer-icon-link" aria-label="Direct Email" title="Email">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Vanilla JavaScript -->
+  <script src="js/script.js" defer></script>
+</body>
+</html>
