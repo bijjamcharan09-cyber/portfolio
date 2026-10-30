@@ -10,3 +10,4 @@ if str(BASE_DIR) not in sys.path:
 from app import create_app
 
 app = create_app()
+handler = app

@@ -17,6 +17,7 @@ import argparse
 import os
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 # Ensure project root is in sys.path
@@ -27,6 +28,61 @@ from dotenv import load_dotenv
 load_dotenv(BASE_DIR / ".env", override=True)
 
 from app.db import SCHEMA_STATEMENTS, _connect_turso, _sanitize_message
+
+
+def _exec_with_retry(conn, sql, params=(), max_retries=3):
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return conn.execute(sql, params)
+        except Exception as err:
+            last_err = err
+            err_msg = str(err).lower()
+            if attempt < max_retries and any(
+                w in err_msg
+                for w in (
+                    "remotedisconnected",
+                    "closed connection",
+                    "connection reset",
+                    "getaddrinfo",
+                    "protocolerror",
+                    "operationalerror",
+                    "eof",
+                    "timed out",
+                )
+            ):
+                time.sleep(0.5 * attempt)
+                continue
+            raise
+    raise last_err
+
+
+def _commit_with_retry(conn, max_retries=3):
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            conn.commit()
+            return
+        except Exception as err:
+            last_err = err
+            err_msg = str(err).lower()
+            if attempt < max_retries and any(
+                w in err_msg
+                for w in (
+                    "remotedisconnected",
+                    "closed connection",
+                    "connection reset",
+                    "getaddrinfo",
+                    "protocolerror",
+                    "operationalerror",
+                    "eof",
+                    "timed out",
+                )
+            ):
+                time.sleep(0.5 * attempt)
+                continue
+            raise
+    raise last_err
 
 
 def migrate_data(
@@ -93,13 +149,13 @@ def migrate_data(
         # 1. Initialize schema idempotently on target
         print("Ensuring target schema is ready...")
         for stmt in SCHEMA_STATEMENTS:
-            target_conn.execute(stmt)
-        target_conn.commit()
+            _exec_with_retry(target_conn, stmt)
+        _commit_with_retry(target_conn)
 
         # Check existing IDs on target to accurately report migrated vs skipped
         existing_target_ids = set()
         try:
-            cur = target_conn.execute("SELECT id FROM transactions")
+            cur = _exec_with_retry(target_conn, "SELECT id FROM transactions")
             existing_target_ids = {r[0] if isinstance(r, (tuple, list)) else r["id"] for r in cur.fetchall()}
         except Exception:
             existing_target_ids = set()
@@ -133,12 +189,12 @@ def migrate_data(
         for i in range(0, len(records_to_insert), batch_size):
             batch = records_to_insert[i : i + batch_size]
             for row in batch:
-                target_conn.execute(insert_sql, row)
-            target_conn.commit()
+                _exec_with_retry(target_conn, insert_sql, row)
+            _commit_with_retry(target_conn)
             migrated_count += len(batch)
 
         # 3. Verify target counts
-        cur = target_conn.execute("SELECT COUNT(*) FROM transactions")
+        cur = _exec_with_retry(target_conn, "SELECT COUNT(*) FROM transactions")
         count_row = cur.fetchone()
         target_total = count_row[0] if isinstance(count_row, (tuple, list)) else count_row["COUNT(*)"]
 
