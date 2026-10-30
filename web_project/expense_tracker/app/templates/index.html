@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body data-currency="{{ base_currency }}">
+  <header>
+    <h1>Expense Tracker</h1>
+    <p id="balance-line">Balance <strong id="balance">0.00</strong> {{ base_currency }}</p>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="add-h">
+      <h2 id="add-h">Add a transaction</h2>
+      <form id="tx-form">
+        <div class="toggle" role="radiogroup" aria-label="Type">
+          <label><input type="radio" name="type" value="expense" checked> Expense</label>
+          <label><input type="radio" name="type" value="income"> Income</label>
+        </div>
+        <label>Amount <input name="amount" type="number" min="0.01" step="0.01" required></label>
+        <label>Category <select name="category" id="category"></select></label>
+        <label>Date <input name="date" type="date" id="tx-date" required></label>
+        <label>Note <input name="note" maxlength="200"></label>
+        <button type="submit">Save transaction</button>
+      </form>
+      <p id="message" role="status"></p>
+    </section>
+
+    <section class="panel wide" aria-labelledby="sum-h">
+      <h2 id="sum-h">Summary</h2>
+      <div class="controls">
+        <div class="tabs" id="tabs">
+          <button data-period="day">Day</button>
+          <button data-period="month" class="active">Month</button>
+          <button data-period="year">Year</button>
+          <button data-period="days">Last N days</button>
+        </div>
+        <label>Around <input type="date" id="anchor"></label>
+        <label id="days-wrap" hidden>Days <input type="number" id="days" value="30" min="1" max="3650"></label>
+      </div>
+      <div class="totals">
+        <div class="income">Income <strong id="income">0.00</strong></div>
+        <div class="expense">Expenses <strong id="expense">0.00</strong></div>
+      </div>
+      <img id="chart" alt="Income versus expenses bar chart and expense categories pie chart">
+      <form id="convert-form" class="inline">
+        <label>Show balance in <input id="to" value="INR" maxlength="3" size="4"></label>
+        <button type="submit">Convert</button>
+        <span id="converted"></span>
+      </form>
+    </section>
+
+    <section class="panel wide" aria-labelledby="list-h">
+      <h2 id="list-h">Transactions in this period</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Category</th>
+              <th>Note</th>
+              <th class="num">Amount</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p id="empty" hidden>Nothing here yet. Add your first transaction above.</p>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+
+</html>
