@@ -178,13 +178,21 @@ In your Vercel Project Dashboard (**Settings > Environment Variables**), set:
 | `BASE_CURRENCY` | `INR(₹)` *(or USD, EUR, etc.)* | Default currency code |
 | `FLASK_DEBUG` | `0` | Disables debug mode in production |
 
-### 3. Deploy
+### 3. Vercel Project Root Directory Setting
+
+If you imported the parent repository (`Portfolio-Showcase`) into Vercel, configure the Root Directory:
+- Go to **Project Settings > General > Root Directory**.
+- Click **Edit** and set it to: `web_project/expense_tracker`.
+- Save changes.
+
+### 4. Deploy
 
 #### Via Git (Recommended)
-Push your repository to GitHub / GitLab / Bitbucket and import the project in the [Vercel Dashboard](https://vercel.com/new).
+Push your repository to GitHub / GitLab / Bitbucket. Vercel will automatically trigger a build and deployment.
 
 #### Via Vercel CLI
 ```powershell
+cd web_project/expense_tracker
 vercel --prod
 ```
 
@@ -230,6 +238,10 @@ pytest -v
 ### 5. `Matplotlib font cache / config permission denied`
 - **Cause**: In serverless environments like Vercel, the home directory is read-only.
 - **Solution**: Handled automatically in `app/config.py` by redirecting `MPLCONFIGDIR` to the system temporary directory (`/tmp/matplotlib`).
+
+### 6. `Not Found: The requested URL was not found on the server`
+- **Cause**: Vercel's catch-all rewrite forwards incoming requests to `/api/index`. Without path middleware, Flask receives `PATH_INFO = "/api/index"` instead of the user's original requested URL (`/`).
+- **Solution**: Resolved by `VercelPathMiddleware` in `api/index.py` (which restores `PATH_INFO` from Vercel's `x-matched-path` header) and route aliases for `/api/index` in `app/__init__.py`. Ensure `vercel.json` maps to `/api/index` (without `.py`).
 
 ---
 

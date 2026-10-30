@@ -64,3 +64,60 @@ def test_convert_handles_api_failure(client, monkeypatch):
         raise ExchangeError("down")
     monkeypatch.setattr("app.api.get_rate", boom)
     assert client.get("/api/convert?to=EUR").status_code == 502
+
+
+def test_root_homepage_renders(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Expense Tracker" in html
+    assert "Add a transaction" in html
+    assert "style.css" in html
+    assert "app.js" in html
+
+
+def test_vercel_index_aliases_render_homepage(client):
+    resp_index = client.get("/api/index")
+    assert resp_index.status_code == 200
+    assert "Expense Tracker" in resp_index.get_data(as_text=True)
+
+    resp_py = client.get("/api/index.py")
+    assert resp_py.status_code == 200
+    assert "Expense Tracker" in resp_py.get_data(as_text=True)
+
+
+def test_static_assets_serve_correctly(client):
+    resp_css = client.get("/static/style.css")
+    assert resp_css.status_code == 200
+    assert "text/css" in resp_css.headers.get("Content-Type", "")
+    assert len(resp_css.data) > 500
+
+    resp_js = client.get("/static/app.js")
+    assert resp_js.status_code == 200
+    assert "javascript" in resp_js.headers.get("Content-Type", "")
+    assert len(resp_js.data) > 500
+
+
+def test_vercel_path_middleware_routing():
+    from api.index import app as vercel_app
+    vclient = vercel_app.test_client()
+
+    # Client visiting root on Vercel with rewrite
+    resp_root = vclient.get("/api/index", headers={"x-matched-path": "/"})
+    assert resp_root.status_code == 200
+    assert "Expense Tracker" in resp_root.get_data(as_text=True)
+
+    # Client visiting API endpoint on Vercel with rewrite
+    resp_api = vclient.get("/api/index", headers={"x-matched-path": "/api/categories"})
+    assert resp_api.status_code == 200
+    assert "expense" in resp_api.json
+
+    # Client visiting static asset on Vercel with rewrite
+    resp_static = vclient.get("/api/index", headers={"x-matched-path": "/static/style.css"})
+    assert resp_static.status_code == 200
+
+    # Query string stripping in x-matched-path
+    resp_qs = vclient.get("/api/index", headers={"x-matched-path": "/?foo=bar"})
+    assert resp_qs.status_code == 200
+    assert "Expense Tracker" in resp_qs.get_data(as_text=True)
+

@@ -33,6 +33,8 @@ def create_app(test_config=None):
             print(f"Database schema initialized successfully for mode: {mode}.")
 
     @app.get("/")
+    @app.get("/api/index")
+    @app.get("/api/index.py")
     def index():
         return render_template("index.html", base_currency=app.config["BASE_CURRENCY"])
 
