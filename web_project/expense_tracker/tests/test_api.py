@@ -103,21 +103,22 @@ def test_vercel_path_middleware_routing():
     vclient = vercel_app.test_client()
 
     # Client visiting root on Vercel with rewrite
-    resp_root = vclient.get("/api/index", headers={"x-matched-path": "/"})
+    resp_root = vclient.get("/api/index?__route__=/")
     assert resp_root.status_code == 200
     assert "Expense Tracker" in resp_root.get_data(as_text=True)
 
     # Client visiting API endpoint on Vercel with rewrite
-    resp_api = vclient.get("/api/index", headers={"x-matched-path": "/api/categories"})
+    resp_api = vclient.get("/api/index?__route__=/api/categories")
     assert resp_api.status_code == 200
     assert "expense" in resp_api.json
 
     # Client visiting static asset on Vercel with rewrite
-    resp_static = vclient.get("/api/index", headers={"x-matched-path": "/static/style.css"})
+    resp_static = vclient.get("/api/index?__route__=/static/style.css")
     assert resp_static.status_code == 200
+    assert "text/css" in resp_static.headers.get("Content-Type", "")
 
-    # Query string stripping in x-matched-path
-    resp_qs = vclient.get("/api/index", headers={"x-matched-path": "/?foo=bar"})
+    # Query string stripping and preservation in __route__
+    resp_qs = vclient.get("/api/index?__route__=/&foo=bar")
     assert resp_qs.status_code == 200
     assert "Expense Tracker" in resp_qs.get_data(as_text=True)
 
