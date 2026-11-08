@@ -1,6 +1,6 @@
-# Expense Tracker
+# Expense Tracker (Multi-User RBAC Platform)
 
-A modern personal finance web application built with Flask, SQLite/Turso (hosted libSQL), vanilla HTML/CSS/JavaScript, and pytest. It supports income and expense tracking, category filtering, monthly/annual summaries, interactive Matplotlib charts, live currency conversions (via Frankfurter API), and seamless deployment to Vercel.
+A modern, secure multi-user personal finance platform built with Flask, SQLite / Turso (hosted libSQL), vanilla HTML/CSS/JavaScript, and pytest. It features session-based authentication, role-based access control (Admin & User roles), strict user-level data isolation (IDOR-prevented), category filtering, monthly/annual summaries, interactive Matplotlib charts, live currency conversions, and serverless deployment to Vercel.
 
 ---
 
@@ -12,7 +12,14 @@ A modern personal finance web application built with Flask, SQLite/Turso (hosted
 | **Automated Testing** | SQLite 3 | Isolated temporary file (`tmp_path / test.db`) | Standard library `sqlite3` |
 | **Production (Vercel)** | Turso Cloud | Hosted SQLite-compatible libSQL | `turso_serverless` (pure Python PEP 249) / `libsql` |
 
-- **Money Storage**: Handled strictly as integer cents (e.g. `12.50` stored as `1250`) to eliminate floating-point rounding errors.
+### Core Security & Architectural Principles:
+- **Authentication**: Secure session-based authentication with Werkzeug password hashing (`scrypt`/`pbkdf2`). Plaintext passwords are never stored.
+- **Session Security**: HTTP-only cookies (`SESSION_COOKIE_HTTPONLY=True`), SameSite=Lax, Secure cookies in production (`SESSION_COOKIE_SECURE=True`), and session fixation prevention (`session.clear()` on login/logout).
+- **Role-Based Access Control (RBAC)**: Centralized server-side `@login_required` and `@admin_required` decorators.
+  - **Admin**: Views system metrics, manages users (activate/deactivate), deletes accounts with safeguards (cannot delete self, cannot delete sole admin), cannot access private user expenses.
+  - **User**: Manages personal expenses (add, edit, delete), views personal analytics and reports. Cannot access or manipulate another user's records (IDOR protection).
+- **Data Isolation**: Every transaction query strictly scopes to `user_id = session['user_id']`.
+- **Money Storage**: Stored strictly as integer cents (e.g. `12.50` stored as `1250`) to eliminate floating-point rounding errors.
 - **SQL Security**: 100% parameterized queries using `?` placeholders across both local SQLite and remote Turso drivers.
 - **Credential Safety**: Authentication tokens are never printed in logs or exposed in HTTP responses.
 
@@ -21,14 +28,14 @@ A modern personal finance web application built with Flask, SQLite/Turso (hosted
 ## Prerequisites & Supported Python Versions
 
 - **Python**: Python 3.9, 3.10, 3.11, 3.12, 3.13, or 3.14 (supports Windows x86_64, Windows ARM64, macOS, and Linux).
-- **Turso CLI** (optional, for managing Turso databases locally): [Install Turso CLI](https://docs.turso.tech/cli/introduction).
+- **Turso CLI** (optional, for managing Turso databases): [Install Turso CLI](https://docs.turso.tech/cli/introduction).
 - **Vercel CLI** (optional, for CLI deployments): `npm i -g vercel`.
 
 ---
 
-## Local Installation (Windows & macOS/Linux)
+## Local Installation
 
-### 1. Clone the repository and enter the directory
+### 1. Enter the project directory
 ```powershell
 # Windows PowerShell
 cd C:\Users\bijja\Portfolio-Showcase\web_project\expense_tracker
@@ -36,11 +43,9 @@ cd C:\Users\bijja\Portfolio-Showcase\web_project\expense_tracker
 
 ### 2. Create and activate a virtual environment
 ```powershell
-# Windows PowerShell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
-
 *(On macOS/Linux: `source venv/bin/activate`)*
 
 ### 3. Install dependencies
@@ -52,11 +57,8 @@ pip install -r requirements.txt
 
 ## Local Development with SQLite
 
-To run locally with a local SQLite database:
-
 1. Copy `.env.example` to `.env`:
    ```powershell
-   # Windows PowerShell
    Copy-Item .env.example .env
    ```
 
@@ -75,7 +77,18 @@ To run locally with a local SQLite database:
    BASE_CURRENCY=INR(₹)
    ```
 
-4. Start the application:
+4. Initialize database schema:
+   ```powershell
+   flask --app run.py init-db
+   ```
+
+5. (Optional) Create an initial administrator account via CLI:
+   ```powershell
+   flask --app run.py create-admin
+   ```
+   *(Note: The very first user to register via `/register` also automatically receives the `admin` role!)*
+
+6. Start the development server:
    ```powershell
    python run.py
    ```
@@ -88,18 +101,12 @@ To run locally with a local SQLite database:
 [Turso](https://turso.tech) is an edge-hosted, SQLite-compatible database built on libSQL. It provides persistent storage for serverless environments where local file storage is ephemeral.
 
 ### 1. Create a Turso Database
-
-1. Sign up or log in at [turso.tech](https://turso.tech) (or via the Turso CLI).
-2. Using Turso CLI:
-   ```bash
-   turso auth login
-   turso db create expense-tracker-db
-   ```
-   *(Or create a new database named `expense-tracker-db` via the Turso Web Console).*
+```bash
+turso auth login
+turso db create expense-tracker-db
+```
 
 ### 2. Obtain Database URL and Authentication Token
-
-Using Turso CLI:
 ```bash
 # Show database URL (e.g., libsql://expense-tracker-db-<org>.turso.io)
 turso db show expense-tracker-db --url
@@ -107,64 +114,20 @@ turso db show expense-tracker-db --url
 # Create an authentication token
 turso db tokens create expense-tracker-db
 ```
-*(Or navigate to your database in the Turso Dashboard > **Connect** > copy the **Database URL** and create a **Database Token**).*
 
-### 3. Configure Local Environment for Turso (Optional Test)
-
-In your `.env`:
-```dotenv
-DATABASE_MODE=turso
-TURSO_DATABASE_URL=libsql://expense-tracker-db-<your-org>.turso.io
-TURSO_AUTH_TOKEN=your-turso-auth-token-here
-```
-
----
-
-## Remote Schema Initialization
-
-Before deploying or running on Turso for the first time, initialize the database schema on Turso. This process creates the `transactions` table and `idx_transactions_date` index idempotently without touching or dropping any data.
-
-### Option A: Using the initialization script
+### 3. Remote Schema Initialization on Turso
+Initialize the tables (`users`, `transactions`) and indexes idempotently on Turso:
 ```powershell
 python scripts/init_turso_db.py --url "libsql://expense-tracker-db-<org>.turso.io" --token "your-token"
 ```
-*(If `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are defined in your `.env`, simply run `python scripts/init_turso_db.py`)*
-
-### Option B: Using the Flask CLI command
-```powershell
-flask --app run.py init-db
-```
-
----
-
-## Migrating Existing SQLite Data to Turso
-
-If you have existing transactions in `data/tracker.db`, transfer them into Turso using the dedicated migration utility:
-
-```powershell
-python scripts/migrate_sqlite_to_turso.py --source data/tracker.db --url "libsql://expense-tracker-db-<org>.turso.io" --token "your-token"
-```
-
-### Safety Guarantees:
-- **Non-Destructive**: Reads from `data/tracker.db` in read-only mode. Never deletes or alters the local file.
-- **Idempotent**: Uses `INSERT OR IGNORE` preserving transaction IDs and `created_at` timestamps. Safe to rerun without duplicating records.
-- **Integrity Verification**: Reports migrated counts, skipped counts, and validates the final row count on Turso.
-- **Secret Redaction**: Never logs authentication tokens to standard output or error streams.
 
 ---
 
 ## Deployment to Vercel
 
-Vercel provides serverless execution for Python applications. Because Vercel serverless functions have a read-only filesystem (except `/tmp`), Turso serves as the persistent cloud database.
+Vercel provides serverless execution for Python applications. Because Vercel serverless functions have an ephemeral, read-only filesystem, Turso serves as the persistent cloud database and Flask client-side signed cookies serve as persistent sessions.
 
-### 1. Project Deployment Files
-
-The project includes:
-- `api/index.py`: Serverless WSGI entry point exposing the Flask `app`.
-- `vercel.json`: URL rewrite configuration routing all traffic to `/api/index.py`.
-- `requirements.txt`: Includes `turso_serverless>=0.1.0` (zero-dependency pure Python driver) and Flask dependencies.
-
-### 2. Configure Environment Variables in Vercel
+### 1. Configure Environment Variables in Vercel
 
 In your Vercel Project Dashboard (**Settings > Environment Variables**), set:
 
@@ -175,25 +138,20 @@ In your Vercel Project Dashboard (**Settings > Environment Variables**), set:
 | `DATABASE_MODE` | `turso` | Enforces Turso cloud database connection |
 | `TURSO_DATABASE_URL` | `libsql://<db>-<org>.turso.io` | Your Turso database endpoint |
 | `TURSO_AUTH_TOKEN` | *(your auth token)* | Your Turso database token |
-| `BASE_CURRENCY` | `INR(₹)` *(or USD, EUR, etc.)* | Default currency code |
+| `BASE_CURRENCY` | `INR(₹)` *(or USD, EUR)* | Default display currency |
+| `ADMIN_EMAIL` | *(optional)* | Email automatically granted admin privileges |
 | `FLASK_DEBUG` | `0` | Disables debug mode in production |
 
-### 3. Vercel Project Root Directory Setting
+### 2. Vercel Project Root Directory Setting
 
 If you imported the parent repository (`Portfolio-Showcase`) into Vercel, configure the Root Directory:
 - Go to **Project Settings > General > Root Directory**.
-- Click **Edit** and set it to: `web_project/expense_tracker`.
+- Set it to: `web_project/expense_tracker`.
 - Save changes.
 
-### 4. Deploy
-
-#### Via Git (Recommended)
-Push your repository to GitHub / GitLab / Bitbucket. Vercel will automatically trigger a build and deployment.
-
-#### Via Vercel CLI
+### 3. Deploy
 ```powershell
-cd web_project/expense_tracker
-vercel --prod
+git push origin master
 ```
 
 ---
@@ -203,45 +161,16 @@ vercel --prod
 The test suite runs against an isolated, temporary SQLite database (`tmp_path / test.db`) to ensure tests remain fast, self-contained, and completely independent of external network access or production credentials.
 
 ```powershell
-# Run all tests
-pytest -v
+python -m pytest -v
 ```
 
-### Test Coverage Highlights:
-- Expense CRUD operations (creation, listing, retrieval, deletion).
-- Input validation (amounts, types, categories, date formats).
-- Reports, summaries, and Matplotlib chart generation.
-- Production configuration validation (insecure secrets and missing Turso credentials are rejected).
-- Safe error handling and token redaction.
-- Migration utility idempotency and non-destructive source handling.
-
----
-
-## Troubleshooting & Common Issues
-
-### 1. `DATABASE_MODE is 'turso' but TURSO_DATABASE_URL is not set`
-- **Cause**: The application is configured to connect to Turso, but no URL was found in the environment.
-- **Solution**: Ensure `TURSO_DATABASE_URL` is set in your `.env` file (local) or in Vercel Environment Variables (production).
-
-### 2. `TURSO_AUTH_TOKEN is required to authenticate with remote Turso database`
-- **Cause**: A remote `libsql://` or `turso.io` URL was specified without an authentication token.
-- **Solution**: Generate a token using `turso db tokens create <database-name>` and add it to `TURSO_AUTH_TOKEN`.
-
-### 3. `Could not connect to Turso database: HTTP status 401: Unauthorized`
-- **Cause**: The provided `TURSO_AUTH_TOKEN` is invalid, expired, or belongs to a different database.
-- **Solution**: Issue a new token with `turso db tokens create <database-name>` and update `TURSO_AUTH_TOKEN`.
-
-### 4. `Production requires a secure, non-default SECRET_KEY`
-- **Cause**: In production (`FLASK_ENV=production` or running on Vercel), the default development fallback secret was detected.
-- **Solution**: Set a strong, randomly generated `SECRET_KEY` in your environment.
-
-### 5. `Matplotlib font cache / config permission denied`
-- **Cause**: In serverless environments like Vercel, the home directory is read-only.
-- **Solution**: Handled automatically in `app/config.py` by redirecting `MPLCONFIGDIR` to the system temporary directory (`/tmp/matplotlib`).
-
-### 6. `Not Found: The requested URL was not found on the server`
-- **Cause**: Vercel's catch-all rewrite forwards incoming requests to `/api/index`. Without path middleware, Flask receives `PATH_INFO = "/api/index"` instead of the user's original requested URL (`/`).
-- **Solution**: Resolved by `VercelPathMiddleware` in `api/index.py` (which restores `PATH_INFO` from Vercel's `x-matched-path` header) and route aliases for `/api/index` in `app/__init__.py`. Ensure `vercel.json` maps to `/api/index` (without `.py`).
+### Test Coverage:
+- **Authentication & Registration**: Registration with email validation, duplicate prevention, password hashing, login with active status check, logout.
+- **RBAC & Authorization**: Admin routes protected against regular users, admin dashboard actions.
+- **Data Isolation & IDOR**: Users cannot view, edit, or delete another user's transactions; personal reports aggregate only the owner's transactions.
+- **Expense CRUD & Features**: Add, edit (PUT), delete transactions, monthly summaries, Matplotlib charts, currency conversion.
+- **Production Validation**: Rejects insecure secret keys, requires Turso credentials in production.
+- **Token Redaction**: Ensures database tokens are never exposed in exceptions or logs.
 
 ---
 
@@ -249,7 +178,7 @@ pytest -v
 
 ```text
 expense_tracker/
-├── .env.example                  # Environment template
+├── .env.example                  # Environment template (includes ADMIN_EMAIL)
 ├── .gitignore                     # Git ignore rules (.env, *.db ignored)
 ├── pytest.ini                     # Pytest configuration
 ├── README.md                      # Documentation
@@ -260,26 +189,33 @@ expense_tracker/
 │   └── index.py                   # Vercel Serverless Function entry point
 ├── app/
 │   ├── __init__.py                # App factory, CLI commands, security headers
-│   ├── api.py                     # REST endpoints
+│   ├── api.py                     # REST endpoints (auth, admin, user-isolated transactions)
+│   ├── auth.py                    # RBAC decorators (@login_required, @admin_required, CSRF)
 │   ├── config.py                  # Centralized configuration & environment parsing
-│   ├── db.py                      # Database abstraction (SQLite & Turso support)
-│   ├── validators.py              # Input validation
+│   ├── db.py                      # Database abstraction (SQLite & Turso support, user/tx CRUD)
+│   ├── validators.py              # Input validation (registration, login, profile, tx)
+│   ├── views.py                   # Web routes (login, register, logout, profile, admin, dashboard)
 │   ├── services/
 │   │   ├── exchange.py            # Frankfurter currency exchange service
 │   │   └── reports.py             # Date ranges, totals, Matplotlib charts
 │   ├── static/
-│   │   ├── app.js                 # Frontend application script
-│   │   └── style.css              # Frontend stylesheets
+│   │   ├── app.js                 # Frontend application script (CRUD, edit, 401 redirect)
+│   │   └── style.css              # Financial SaaS dashboard stylesheet
 │   └── templates/
-│       └── index.html             # Single-page application HTML
+│       ├── admin.html             # Admin user management & stats dashboard
+│       ├── index.html             # Personal expense tracker dashboard
+│       ├── login.html             # User login page
+│       ├── profile.html           # User profile & password management page
+│       └── register.html          # User registration page
 ├── data/
-│   └── tracker.db                 # Local development SQLite database (12 existing records)
+│   └── tracker.db                 # Local development SQLite database
 ├── scripts/
 │   ├── init_turso_db.py           # Remote Turso schema initialization utility
 │   └── migrate_sqlite_to_turso.py # SQLite-to-Turso data migration utility
 └── tests/
-    ├── conftest.py                # Pytest fixtures (temporary test SQLite db)
-    ├── test_api.py                # API and endpoint tests
+    ├── conftest.py                # Pytest fixtures (authenticated client, admin_client, unauth_client)
+    ├── test_api.py                # Core expense API and endpoint tests
+    ├── test_auth_rbac.py          # Multi-user, RBAC, IDOR, and auth tests
     ├── test_migration.py          # Data migration utility tests
     └── test_turso_db.py           # Turso db abstraction & security tests
 ```
