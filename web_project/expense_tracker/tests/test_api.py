@@ -98,9 +98,24 @@ def test_static_assets_serve_correctly(client):
     assert len(resp_js.data) > 500
 
 
-def test_vercel_path_middleware_routing():
+def test_vercel_path_middleware_routing(tmp_path):
     from api.index import app as vercel_app
+    vercel_app.config["TESTING"] = True
+    vercel_app.config["DATABASE_MODE"] = "sqlite"
+    vercel_app.config["DATABASE"] = str(tmp_path / "vercel_test.db")
+    with vercel_app.app_context():
+        from app import db
+        from app.auth import hash_password
+        db.init_schema()
+        vuser_id = db.create_user("Vercel Test", "vercel_test@example.com", hash_password("Password123!"), role="user")
+        vuser = db.get_user_by_id(vuser_id)
+
     vclient = vercel_app.test_client()
+    with vclient.session_transaction() as sess:
+        sess["user_id"] = vuser["id"]
+        sess["user_name"] = vuser["full_name"]
+        sess["user_email"] = vuser["email"]
+        sess["user_role"] = vuser["role"]
 
     # Client visiting root on Vercel with rewrite
     resp_root = vclient.get("/api/index?__route__=/")
