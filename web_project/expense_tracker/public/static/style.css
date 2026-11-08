@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Expense Tracker - Modern Financial Dashboard Stylesheet
+   Expense Tracker - Modern Financial Dashboard & Multi-User Platform
    Designed with a refined, human-crafted SaaS aesthetic (Linear / Stripe style).
    ========================================================================== */
 
@@ -92,12 +92,12 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   3. Header & Total Balance Capsule
+   3. Header, Brand & Navigation Bar
    -------------------------------------------------------------------------- */
 header {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 1.75rem 1.25rem 1.25rem;
+  padding: 1.5rem 1.25rem 1rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -105,9 +105,15 @@ header {
   gap: 1rem;
 }
 
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.45rem;
   font-weight: 700;
   letter-spacing: -0.025em;
   color: var(--text-main);
@@ -116,7 +122,6 @@ h1 {
   gap: 0.625rem;
 }
 
-/* Subtle decorative brand mark */
 h1::before {
   content: "";
   display: inline-block;
@@ -126,13 +131,20 @@ h1::before {
   border-radius: 3px;
 }
 
+.header-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
 #balance-line {
   margin: 0;
   display: inline-flex;
   align-items: baseline;
   gap: 0.625rem;
   background: var(--bg-card);
-  padding: 0.5rem 1rem;
+  padding: 0.45rem 0.95rem;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-xs);
@@ -142,11 +154,80 @@ h1::before {
 }
 
 #balance {
-  font-size: 1.45rem;
+  font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-main);
   font-variant-numeric: tabular-nums lining-nums;
+}
+
+.user-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-subtle);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--brand-navy);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.user-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.nav-btn:hover {
+  background: var(--bg-card);
+  color: var(--text-main);
+  border-color: var(--border-subtle);
+}
+
+.nav-btn-outline {
+  border-color: var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.nav-btn-outline:hover {
+  background: var(--expense-red-bg);
+  color: var(--expense-red);
+  border-color: var(--expense-red-border);
 }
 
 /* --------------------------------------------------------------------------
@@ -198,7 +279,6 @@ form {
   gap: 1rem;
 }
 
-/* Segmented Pill Toggle for Expense / Income */
 .toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -238,7 +318,6 @@ form {
   margin: 0;
 }
 
-/* Modern :has selector for active pill state */
 .toggle label:has(input[value="expense"]:checked) {
   background: var(--bg-card);
   color: var(--expense-red);
@@ -258,7 +337,6 @@ form {
   outline-offset: 1px;
 }
 
-/* Form Inputs, Labels & Select */
 label {
   display: flex;
   flex-direction: column;
@@ -299,7 +377,6 @@ select:focus {
   box-shadow: 0 0 0 3px var(--accent-focus);
 }
 
-/* Custom styled select chevron */
 select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
@@ -310,8 +387,8 @@ select {
   cursor: pointer;
 }
 
-/* Primary Button */
-button[type="submit"] {
+button[type="submit"],
+.btn-primary {
   cursor: pointer;
   background: var(--brand-navy);
   color: #ffffff;
@@ -326,16 +403,17 @@ button[type="submit"] {
   margin-top: 0.35rem;
 }
 
-button[type="submit"]:hover {
+button[type="submit"]:hover,
+.btn-primary:hover {
   background: var(--brand-navy-hover);
   border-color: var(--brand-navy-hover);
 }
 
-button[type="submit"]:active {
+button[type="submit"]:active,
+.btn-primary:active {
   transform: scale(0.99);
 }
 
-/* Feedback & Status message */
 #message {
   min-height: 1.25rem;
   margin: 0.75rem 0 0;
@@ -365,7 +443,6 @@ button[type="submit"]:active {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-/* Period Tabs */
 .tabs {
   display: inline-flex;
   background: var(--bg-subtle);
@@ -398,7 +475,6 @@ button[type="submit"]:active {
   box-shadow: var(--shadow-xs);
 }
 
-/* Date Pickers in Controls */
 .controls label {
   display: inline-flex;
   flex-direction: row;
@@ -419,7 +495,6 @@ button[type="submit"]:active {
   width: 4.5rem;
 }
 
-/* Summary Metric Cards (.totals) */
 .totals {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -473,7 +548,6 @@ button[type="submit"]:active {
   color: var(--expense-red);
 }
 
-/* Chart Container & Styling */
 #chart {
   display: block;
   width: 100%;
@@ -489,7 +563,6 @@ button[type="submit"]:active {
   box-shadow: var(--shadow-xs);
 }
 
-/* Currency Converter Toolbar (#convert-form.inline) */
 .inline {
   display: flex;
   flex-wrap: wrap;
@@ -560,7 +633,6 @@ button[type="submit"]:active {
   box-shadow: var(--shadow-xs);
 }
 
-/* Custom minimal scrollbar */
 .table-wrap::-webkit-scrollbar {
   height: 6px;
 }
@@ -570,9 +642,6 @@ button[type="submit"]:active {
 .table-wrap::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: var(--radius-pill);
-}
-.table-wrap::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
 }
 
 table {
@@ -621,7 +690,6 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
-/* Date column */
 tbody td:first-child {
   color: var(--text-muted);
   font-size: 0.8125rem;
@@ -629,13 +697,11 @@ tbody td:first-child {
   white-space: nowrap;
 }
 
-/* Category column styled as a clean badge */
 tbody td:nth-child(2) {
   font-weight: 600;
   color: var(--text-main);
 }
 
-/* Note column */
 tbody td:nth-child(3) {
   color: var(--text-muted);
   max-width: 260px;
@@ -644,7 +710,6 @@ tbody td:nth-child(3) {
   white-space: nowrap;
 }
 
-/* Amount Column */
 td.num {
   text-align: right;
   font-weight: 600;
@@ -661,7 +726,6 @@ td.num.expense {
   color: var(--expense-red);
 }
 
-/* Action / Delete Button */
 td:last-child {
   text-align: right;
   width: 68px;
@@ -691,7 +755,6 @@ td button:focus-visible {
   outline-offset: 1px;
 }
 
-/* Empty State */
 #empty {
   padding: 3rem 1.5rem;
   text-align: center;
@@ -704,10 +767,286 @@ td button:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   8. Responsive Design & Media Queries
+   8. Authentication Pages (Login & Register)
    -------------------------------------------------------------------------- */
+.auth-body {
+  background: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
 
-/* Tablet & Smaller Laptops */
+.auth-container {
+  width: 100%;
+  max-width: 440px;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  padding: 2.25rem 2rem;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+
+.auth-logo {
+  width: 36px;
+  height: 36px;
+  background: var(--brand-navy);
+  border-radius: 8px;
+  margin: 0 auto 1rem;
+}
+
+.auth-header h1 {
+  justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.auth-header h1::before {
+  display: none;
+}
+
+.auth-subtitle {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.auth-form {
+  gap: 1.125rem;
+}
+
+.auth-footer {
+  text-align: center;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.auth-footer a {
+  color: var(--focus-ring);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------------------
+   9. Alerts, Badges & Utilities
+   -------------------------------------------------------------------------- */
+.alert {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.alert-error {
+  background: var(--expense-red-bg);
+  color: var(--expense-red);
+  border: 1px solid var(--expense-red-border);
+}
+
+.alert-success {
+  background: var(--income-green-bg);
+  color: var(--income-green);
+  border: 1px solid var(--income-green-border);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-admin {
+  background: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.badge-user {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.badge-success {
+  background: var(--income-green-bg);
+  color: var(--income-green);
+  border: 1px solid var(--income-green-border);
+}
+
+.badge-danger {
+  background: var(--expense-red-bg);
+  color: var(--expense-red);
+  border: 1px solid var(--expense-red-border);
+}
+
+.btn-sm {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-outline {
+  background: #ffffff;
+  color: var(--text-main);
+  border: 1px solid var(--border-strong);
+}
+
+.btn-outline:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-hover);
+}
+
+.btn-danger {
+  background: #ffffff;
+  color: var(--expense-red);
+  border: 1px solid var(--expense-red-border);
+}
+
+.btn-danger:hover {
+  background: var(--expense-red-bg);
+}
+
+.text-success { color: var(--income-green); }
+.text-muted { color: var(--text-muted); }
+.text-sm { font-size: 0.8125rem; }
+.text-right { text-align: right; }
+.font-medium { font-weight: 500; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-4 { margin-top: 1rem; }
+
+/* --------------------------------------------------------------------------
+   10. Admin & Profile Dashboard Layouts
+   -------------------------------------------------------------------------- */
+.admin-main,
+.profile-main {
+  display: flex;
+  flex-direction: column;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 1.25rem 3rem;
+  gap: 1.5rem;
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.125rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.section-desc {
+  margin: -0.75rem 0 1.25rem;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.admin-table td {
+  padding: 0.75rem 1rem;
+}
+
+.profile-card {
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profile-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--brand-navy);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.profile-meta-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.profile-name {
+  font-size: 1.125rem;
+  color: var(--text-main);
+}
+
+.profile-email {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.profile-form h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0 0 0.5rem;
+}
+
+/* --------------------------------------------------------------------------
+   11. Responsive Design & Media Queries
+   -------------------------------------------------------------------------- */
 @media (max-width: 960px) {
   main {
     grid-template-columns: 1fr;
@@ -726,7 +1065,6 @@ td button:focus-visible {
   }
 }
 
-/* Mobile Screens (Phones) */
 @media (max-width: 640px) {
   header {
     flex-direction: column;
@@ -735,7 +1073,17 @@ td button:focus-visible {
     gap: 0.75rem;
   }
 
+  .header-right {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   #balance-line {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .user-nav {
     justify-content: space-between;
     width: 100%;
   }
@@ -805,15 +1153,14 @@ td button:focus-visible {
     font-size: 0.8125rem;
   }
 
-  /* Optimize touch target sizes */
   input,
   select,
-  button[type="submit"] {
+  button[type="submit"],
+  .btn-primary {
     min-height: 44px;
   }
 }
 
-/* Respect user preference for reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
