@@ -1,9 +1,14 @@
 const $ = (sel) => document.querySelector(sel);
-const state = { period: "month", categories: {} };
+const state = { period: "month", categories: {}, editingId: null };
 const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-async function api(path, options) {
+async function api(path, options = {}) {
+  options.credentials = "same-origin";
   const res = await fetch("/api" + path, options);
+  if (res.status === 401) {
+    window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
+    return null;
+  }
   if (res.status === 204) return null;
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Something went wrong");
@@ -19,8 +24,51 @@ function query() {
 }
 
 function fillCategories() {
-  const type = document.querySelector("input[name=type]:checked").value;
+  const checked = document.querySelector("input[name=type]:checked");
+  if (!checked || !state.categories[checked.value]) return;
+  const type = checked.value;
   $("#category").replaceChildren(...state.categories[type].map((c) => new Option(c, c)));
+}
+
+function startEdit(t) {
+  state.editingId = t.id;
+  const form = $("#tx-form");
+  const radio = form.querySelector(`input[name=type][value="${t.type}"]`);
+  if (radio) {
+    radio.checked = true;
+    fillCategories();
+  }
+  form.amount.value = t.amount;
+  form.category.value = t.category;
+  form.date.value = t.date;
+  form.note.value = t.note || "";
+  $("#add-h").textContent = "Edit transaction";
+  const submitBtn = form.querySelector('button[type="submit"]');
+  submitBtn.textContent = "Update transaction";
+
+  if (!$("#btn-cancel-edit")) {
+    const cancelBtn = Object.assign(document.createElement("button"), {
+      type: "button",
+      id: "btn-cancel-edit",
+      textContent: "Cancel edit",
+      className: "btn-outline",
+    });
+    cancelBtn.style.marginTop = "0.25rem";
+    cancelBtn.addEventListener("click", cancelEdit);
+    submitBtn.after(cancelBtn);
+  }
+}
+
+function cancelEdit() {
+  state.editingId = null;
+  $("#add-h").textContent = "Add a transaction";
+  const form = $("#tx-form");
+  form.amount.value = "";
+  form.note.value = "";
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.textContent = "Save transaction";
+  const cancelBtn = $("#btn-cancel-edit");
+  if (cancelBtn) cancelBtn.remove();
 }
 
 function renderRows(items) {
@@ -36,14 +84,30 @@ function renderRows(items) {
       className: "num " + t.type,
       textContent: (t.type === "expense" ? "-" : "+") + money(t.amount),
     });
-    const del = Object.assign(document.createElement("button"), { textContent: "Delete", type: "button" });
+
+    const editBtn = Object.assign(document.createElement("button"), {
+      textContent: "Edit",
+      type: "button",
+      className: "btn-edit",
+    });
+    editBtn.setAttribute("aria-label", `Edit ${t.category} ${t.date}`);
+    editBtn.addEventListener("click", () => startEdit(t));
+
+    const del = Object.assign(document.createElement("button"), {
+      textContent: "Delete",
+      type: "button",
+      className: "btn-delete",
+    });
     del.setAttribute("aria-label", `Delete ${t.category} ${t.date}`);
     del.addEventListener("click", async () => {
       await api("/transactions/" + t.id, { method: "DELETE" });
+      if (state.editingId === t.id) cancelEdit();
       refresh();
     });
+
     const last = document.createElement("td");
-    last.append(del);
+    last.style.whiteSpace = "nowrap";
+    last.append(editBtn, del);
     tr.append(amount, last);
     body.append(tr);
   }
@@ -53,6 +117,7 @@ async function refresh() {
   try {
     const q = query();
     const [summary, items] = await Promise.all([api("/reports/summary?" + q), api("/transactions?" + q)]);
+    if (!summary || !items) return;
     $("#income").textContent = money(summary.income);
     $("#expense").textContent = money(summary.expense);
     $("#balance").textContent = money(summary.balance);
@@ -67,10 +132,23 @@ $("#tx-form").addEventListener("submit", async (e) => {
   const form = e.target;
   const body = Object.fromEntries(new FormData(form));
   try {
-    await api("/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (state.editingId) {
+      await api("/transactions/" + state.editingId, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      cancelEdit();
+    } else {
+      await api("/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      form.amount.value = "";
+      form.note.value = "";
+    }
     say("");
-    form.amount.value = "";
-    form.note.value = "";
     refresh();
   } catch (err) { say(err.message); }
 });
@@ -79,7 +157,9 @@ $("#convert-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
     const r = await api(`/convert?to=${encodeURIComponent($("#to").value)}&${query()}`);
-    $("#converted").textContent = `${money(r.converted)} ${r.to} (1 ${r.base} = ${r.rate} ${r.to})`;
+    if (r) {
+      $("#converted").textContent = `${money(r.converted)} ${r.to} (1 ${r.base} = ${r.rate} ${r.to})`;
+    }
   } catch (err) { $("#converted").textContent = err.message; }
 });
 
@@ -99,7 +179,7 @@ $("#days").addEventListener("change", refresh);
   const today = new Date().toLocaleDateString("en-CA");  // YYYY-MM-DD in local time
   $("#anchor").value = today;
   $("#tx-date").value = today;
-  state.categories = await api("/categories");
+  state.categories = await api("/categories") || {};
   fillCategories();
   refresh();
 })();
