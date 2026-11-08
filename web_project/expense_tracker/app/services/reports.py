@@ -35,29 +35,50 @@ def _labels(start, end, monthly):
     return labels
 
 
-def summarize(start, end):
+def summarize(start, end, user_id=None):
     conn = get_db()
     s, e = start.isoformat(), end.isoformat()
 
     totals = {"income": 0, "expense": 0}
-    for r in conn.execute(
-        "SELECT type, SUM(amount_cents) AS t FROM transactions WHERE date BETWEEN ? AND ? GROUP BY type", (s, e)
-    ):
-        totals[r["type"]] = r["t"]
+    if user_id is not None:
+        for r in conn.execute(
+            "SELECT type, SUM(amount_cents) AS t FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ? GROUP BY type",
+            (user_id, s, e),
+        ):
+            totals[r["type"]] = r["t"]
 
-    cats = conn.execute(
-        "SELECT category, SUM(amount_cents) AS t FROM transactions "
-        "WHERE type = 'expense' AND date BETWEEN ? AND ? GROUP BY category ORDER BY t DESC",
-        (s, e),
-    ).fetchall()
+        cats = conn.execute(
+            "SELECT category, SUM(amount_cents) AS t FROM transactions "
+            "WHERE user_id = ? AND type = 'expense' AND date BETWEEN ? AND ? GROUP BY category ORDER BY t DESC",
+            (user_id, s, e),
+        ).fetchall()
 
-    monthly = (end - start).days > 92  # long ranges are grouped by month
-    bucket = "substr(date, 1, 7)" if monthly else "date"  # constant strings, not user input
-    rows = conn.execute(
-        f"SELECT {bucket} AS label, type, SUM(amount_cents) AS t FROM transactions "
-        "WHERE date BETWEEN ? AND ? GROUP BY label, type",
-        (s, e),
-    ).fetchall()
+        monthly = (end - start).days > 92  # long ranges are grouped by month
+        bucket = "substr(date, 1, 7)" if monthly else "date"  # constant strings, not user input
+        rows = conn.execute(
+            f"SELECT {bucket} AS label, type, SUM(amount_cents) AS t FROM transactions "
+            "WHERE user_id = ? AND date BETWEEN ? AND ? GROUP BY label, type",
+            (user_id, s, e),
+        ).fetchall()
+    else:
+        for r in conn.execute(
+            "SELECT type, SUM(amount_cents) AS t FROM transactions WHERE date BETWEEN ? AND ? GROUP BY type", (s, e)
+        ):
+            totals[r["type"]] = r["t"]
+
+        cats = conn.execute(
+            "SELECT category, SUM(amount_cents) AS t FROM transactions "
+            "WHERE type = 'expense' AND date BETWEEN ? AND ? GROUP BY category ORDER BY t DESC",
+            (s, e),
+        ).fetchall()
+
+        monthly = (end - start).days > 92  # long ranges are grouped by month
+        bucket = "substr(date, 1, 7)" if monthly else "date"  # constant strings, not user input
+        rows = conn.execute(
+            f"SELECT {bucket} AS label, type, SUM(amount_cents) AS t FROM transactions "
+            "WHERE date BETWEEN ? AND ? GROUP BY label, type",
+            (s, e),
+        ).fetchall()
     series = {l: {"label": l, "income": 0, "expense": 0} for l in _labels(start, end, monthly)}
     for r in rows:
         series[r["label"]][r["type"]] = r["t"] / 100

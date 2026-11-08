@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User Profile - Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+  <header>
+    <div class="brand-wrap">
+      <h1>Account Profile</h1>
+    </div>
+    <nav class="user-nav">
+      <a href="{{ url_for('views.index') }}" class="nav-btn">Dashboard</a>
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('views.admin_dashboard') }}" class="nav-btn">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('views.logout') }}" class="nav-btn nav-btn-outline">Logout</a>
+    </nav>
+  </header>
+
+  <main class="profile-main">
+    <section class="panel profile-card">
+      <h2>Profile Details</h2>
+      <div class="profile-meta">
+        <div class="profile-avatar">{{ user.full_name[:1] | upper }}</div>
+        <div class="profile-meta-text">
+          <strong class="profile-name">{{ user.full_name }}</strong>
+          <span class="profile-email">{{ user.email }}</span>
+          <span class="badge {% if user.role == 'admin' %}badge-admin{% else %}badge-user{% endif %}">
+            {{ user.role | capitalize }} Account
+          </span>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-error" role="alert">{{ error }}</div>
+      {% endif %}
+
+      {% if success %}
+      <div class="alert alert-success" role="status">{{ success }}</div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('views.profile') }}" class="profile-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <h3>Update Personal Info</h3>
+        <label>
+          Full Name
+          <input type="text" name="full_name" value="{{ user.full_name }}" required maxlength="100">
+        </label>
+
+        <label>
+          Email Address
+          <input type="email" value="{{ user.email }}" disabled title="Email address cannot be changed">
+        </label>
+
+        <h3 class="mt-4">Change Password</h3>
+        <label>
+          Current Password
+          <input type="password" name="current_password" placeholder="Enter current password to change" autocomplete="current-password">
+        </label>
+
+        <label>
+          New Password (min 8 characters)
+          <input type="password" name="new_password" placeholder="New password" minlength="8" autocomplete="new-password">
+        </label>
+
+        <label>
+          Confirm New Password
+          <input type="password" name="confirm_new_password" placeholder="Confirm new password" minlength="8" autocomplete="new-password">
+        </label>
+
+        <button type="submit" class="btn-primary mt-2">Save Profile Changes</button>
+      </form>
+    </section>
+  </main>
+</body>
+
+</html>

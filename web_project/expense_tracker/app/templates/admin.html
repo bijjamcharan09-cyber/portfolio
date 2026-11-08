@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Dashboard - Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+  <header>
+    <div class="brand-wrap">
+      <h1>Admin Portal</h1>
+    </div>
+    <nav class="user-nav">
+      <a href="{{ url_for('views.index') }}" class="nav-btn">Dashboard</a>
+      <a href="{{ url_for('views.profile') }}" class="nav-btn">Profile</a>
+      <a href="{{ url_for('views.logout') }}" class="nav-btn nav-btn-outline">Logout</a>
+    </nav>
+  </header>
+
+  <main class="admin-main">
+    <!-- Platform KPI Stats -->
+    <section class="panel wide">
+      <h2>Platform Overview</h2>
+      <div class="admin-stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Total Registered Users</span>
+          <strong class="stat-value">{{ stats.total_users }}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Active Users</span>
+          <strong class="stat-value text-success">{{ stats.active_users }}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Total Transactions</span>
+          <strong class="stat-value">{{ stats.total_transactions }}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Platform Volume</span>
+          <strong class="stat-value">{{ "{:,.2f}".format(stats.total_volume) }} {{ base_currency }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- Users Management Table -->
+    <section class="panel wide">
+      <h2>User Accounts & Permissions</h2>
+      <p class="section-desc">Manage system access, activate/deactivate accounts, and review role assignments.</p>
+
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Full Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Transactions</th>
+              <th>Joined</th>
+              <th class="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td>#{{ u.id }}</td>
+              <td class="font-medium">{{ u.full_name }}</td>
+              <td class="text-muted">{{ u.email }}</td>
+              <td>
+                <span class="badge {% if u.role == 'admin' %}badge-admin{% else %}badge-user{% endif %}">
+                  {{ u.role | capitalize }}
+                </span>
+              </td>
+              <td>
+                <span class="badge {% if u.is_active %}badge-success{% else %}badge-danger{% endif %}">
+                  {% if u.is_active %}Active{% else %}Deactivated{% endif %}
+                </span>
+              </td>
+              <td>{{ u.transaction_count }}</td>
+              <td class="text-muted text-sm">{{ u.created_at[:10] }}</td>
+              <td class="text-right">
+                {% if u.id != current_user.id %}
+                <button type="button" class="btn-sm btn-outline toggle-status-btn" data-user-id="{{ u.id }}">
+                  {% if u.is_active %}Deactivate{% else %}Activate{% endif %}
+                </button>
+                <button type="button" class="btn-sm btn-danger delete-user-btn" data-user-id="{{ u.id }}" data-user-name="{{ u.full_name }}">
+                  Delete
+                </button>
+                {% else %}
+                <span class="text-muted text-sm">(You)</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    document.querySelectorAll(".toggle-status-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const userId = btn.dataset.userId;
+        try {
+          const res = await fetch(`/api/admin/users/${userId}/toggle-status`, {
+            method: "POST",
+            headers: { "X-CSRF-Token": "{{ csrf_token }}" }
+          });
+          const data = await res.json();
+          if (!res.ok) alert(data.error || "Failed to update status");
+          else window.location.reload();
+        } catch (e) {
+          alert("Network error: " + e.message);
+        }
+      });
+    });
+
+    document.querySelectorAll(".delete-user-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const userId = btn.dataset.userId;
+        const userName = btn.dataset.userName;
+        if (!confirm(`Are you sure you want to permanently delete user "${userName}" and all their transactions?`)) return;
+        try {
+          const res = await fetch(`/api/admin/users/${userId}`, {
+            method: "DELETE",
+            headers: { "X-CSRF-Token": "{{ csrf_token }}" }
+          });
+          const data = await res.json();
+          if (!res.ok) alert(data.error || "Failed to delete user");
+          else window.location.reload();
+        } catch (e) {
+          alert("Network error: " + e.message);
+        }
+      });
+    });
+  </script>
+</body>
+
+</html>

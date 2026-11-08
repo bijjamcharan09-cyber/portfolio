@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login - Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="auth-body">
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo"></div>
+        <h1>Welcome Back</h1>
+        <p class="auth-subtitle">Sign in to your Expense Tracker account</p>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-error" role="alert">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('views.login') }}{% if request.args.get('next') %}?next={{ request.args.get('next') | urlencode }}{% endif %}" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label>
+          Email Address
+          <input type="email" name="email" required autocomplete="email" placeholder="you@example.com" value="{{ request.form.get('email', '') }}">
+        </label>
+
+        <label>
+          Password
+          <input type="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+        </label>
+
+        <button type="submit" class="btn-primary">Sign In</button>
+      </form>
+
+      <div class="auth-footer">
+        <p>Don't have an account? <a href="{{ url_for('views.register') }}">Create an account</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

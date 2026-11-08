@@ -1,6 +1,7 @@
 """All settings come from environment variables (loaded from .env)."""
 import os
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,6 +26,15 @@ class Config:
         "replace-with-a-random-secret",
         "",
     }
+
+    # Session cookie security settings
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = IS_PRODUCTION
+    PERMANENT_SESSION_LIFETIME = timedelta(days=7)
+
+    # Optional pre-designated admin email
+    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 
     # Database configuration
     # DATABASE_MODE can be explicitly 'sqlite' or 'turso'.

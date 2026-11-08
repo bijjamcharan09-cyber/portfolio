@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Register - Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="auth-body">
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo"></div>
+        <h1>Create Account</h1>
+        <p class="auth-subtitle">Get started with your multi-user Expense Tracker</p>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-error" role="alert">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('views.register') }}" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label>
+          Full Name
+          <input type="text" name="full_name" required autocomplete="name" placeholder="Alice Smith" maxlength="100" value="{{ request.form.get('full_name', '') }}">
+        </label>
+
+        <label>
+          Email Address
+          <input type="email" name="email" required autocomplete="email" placeholder="you@example.com" maxlength="255" value="{{ request.form.get('email', '') }}">
+        </label>
+
+        <label>
+          Password (min 8 characters)
+          <input type="password" name="password" required autocomplete="new-password" placeholder="Create a strong password" minlength="8" maxlength="128">
+        </label>
+
+        <label>
+          Confirm Password
+          <input type="password" name="confirm_password" required autocomplete="new-password" placeholder="Confirm your password" minlength="8" maxlength="128">
+        </label>
+
+        <button type="submit" class="btn-primary">Create Account</button>
+      </form>
+
+      <div class="auth-footer">
+        <p>Already have an account? <a href="{{ url_for('views.login') }}">Sign In</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
