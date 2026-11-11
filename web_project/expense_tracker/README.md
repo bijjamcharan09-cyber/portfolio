@@ -1,6 +1,6 @@
-# Expense Tracker (Multi-User RBAC Platform)
+# Expense Tracker (Multi-User RBAC Platform + Guest Mode + Excel)
 
-A modern, secure multi-user personal finance platform built with Flask, SQLite / Turso (hosted libSQL), vanilla HTML/CSS/JavaScript, and pytest. It features session-based authentication, role-based access control (Admin & User roles), strict user-level data isolation (IDOR-prevented), category filtering, monthly/annual summaries, interactive Matplotlib charts, live currency conversions, and serverless deployment to Vercel.
+A modern, secure multi-user personal finance platform built with Flask, SQLite / Turso (hosted libSQL), vanilla HTML/CSS/JavaScript, and pytest. It features session-based authentication, role-based access control (Admin & User roles), strict user-level data isolation (IDOR-prevented), category filtering, monthly/annual summaries, interactive Matplotlib charts, live currency conversions, Excel (.xlsx) Import/Export with formula injection defenses, and an isolated One-Time Guest Mode Trial for new visitors.
 
 ---
 
@@ -15,10 +15,14 @@ A modern, secure multi-user personal finance platform built with Flask, SQLite /
 ### Core Security & Architectural Principles:
 - **Authentication**: Secure session-based authentication with Werkzeug password hashing (`scrypt`/`pbkdf2`). Plaintext passwords are never stored.
 - **Session Security**: HTTP-only cookies (`SESSION_COOKIE_HTTPONLY=True`), SameSite=Lax, Secure cookies in production (`SESSION_COOKIE_SECURE=True`), and session fixation prevention (`session.clear()` on login/logout).
-- **Role-Based Access Control (RBAC)**: Centralized server-side `@login_required` and `@admin_required` decorators.
+- **Role-Based Access Control (RBAC)**: Centralized server-side `@login_required`, `@admin_required`, and `@guest_required` decorators.
   - **Admin**: Views system metrics, manages users (activate/deactivate), deletes accounts with safeguards (cannot delete self, cannot delete sole admin), cannot access private user expenses.
-  - **User**: Manages personal expenses (add, edit, delete), views personal analytics and reports. Cannot access or manipulate another user's records (IDOR protection).
-- **Data Isolation**: Every transaction query strictly scopes to `user_id = session['user_id']`.
+  - **User**: Manages personal expenses (add, edit, delete), views personal analytics and reports, imports/exports personal records via Excel. Cannot access or manipulate another user's records (IDOR protection).
+  - **Guest**: Explores a full-featured demo dashboard with realistic preloaded sample transactions, monthly summaries, charts, and Excel import/export. Guests can never access admin dashboards, registered-user records, or private account settings.
+- **One-Time Guest Trial Enforcement**: Enforced via a tamper-proof, signed server cookie (`guest_trial_record`). The session automatically expires after 30 minutes of inactivity and purges temporary demo records.
+  - *Limitation Note*: In accordance with web privacy standards and non-invasive guidelines, invasive device fingerprinting is not used. Clearing browser cookies/storage or using an alternate browser/device allows initiating a new trial.
+- **Data Isolation**: Registered transactions are stored in `transactions` (scoped to `user_id`). Guest trial data is stored in a separate table `guest_transactions` (scoped to `guest_id` with `expires_at`). Guest queries physically cannot access or contaminate registered records.
+- **Excel Import/Export Security**: Uses `openpyxl`. Validates `.xlsx` format, file size limits (4 MB), column headers, and data types. Formula injection protection strips leading formula symbols (`=`, `+`, `-`, `@`) upon import and sanitizes exported cells with single-quote escaping.
 - **Money Storage**: Stored strictly as integer cents (e.g. `12.50` stored as `1250`) to eliminate floating-point rounding errors.
 - **SQL Security**: 100% parameterized queries using `?` placeholders across both local SQLite and remote Turso drivers.
 - **Credential Safety**: Authentication tokens are never printed in logs or exposed in HTTP responses.
@@ -164,10 +168,12 @@ The test suite runs against an isolated, temporary SQLite database (`tmp_path / 
 python -m pytest -v
 ```
 
-### Test Coverage:
+### Test Coverage (52 Passing Tests):
 - **Authentication & Registration**: Registration with email validation, duplicate prevention, password hashing, login with active status check, logout.
 - **RBAC & Authorization**: Admin routes protected against regular users, admin dashboard actions.
 - **Data Isolation & IDOR**: Users cannot view, edit, or delete another user's transactions; personal reports aggregate only the owner's transactions.
+- **Guest Mode Trial**: One-time trial enforcement, temporary session generation, sample data seeding, 30-minute inactivity timeout, guest blocked from admin routes and registered-user records.
+- **Excel Import/Export**: .xlsx template generation, registered user export, guest export, safe Excel parsing with column validation, error tracking, duplicate deduplication, and formula injection defense.
 - **Expense CRUD & Features**: Add, edit (PUT), delete transactions, monthly summaries, Matplotlib charts, currency conversion.
 - **Production Validation**: Rejects insecure secret keys, requires Turso credentials in production.
 - **Token Redaction**: Ensures database tokens are never exposed in exceptions or logs.
@@ -182,29 +188,30 @@ expense_tracker/
 ├── .gitignore                     # Git ignore rules (.env, *.db ignored)
 ├── pytest.ini                     # Pytest configuration
 ├── README.md                      # Documentation
-├── requirements.txt               # Dependencies (Flask, turso_serverless, etc.)
+├── requirements.txt               # Dependencies (Flask, openpyxl, turso_serverless, etc.)
 ├── run.py                         # Local development server entry point
 ├── vercel.json                    # Vercel deployment rewrites
 ├── api/
 │   └── index.py                   # Vercel Serverless Function entry point
 ├── app/
 │   ├── __init__.py                # App factory, CLI commands, security headers
-│   ├── api.py                     # REST endpoints (auth, admin, user-isolated transactions)
-│   ├── auth.py                    # RBAC decorators (@login_required, @admin_required, CSRF)
-│   ├── config.py                  # Centralized configuration & environment parsing
-│   ├── db.py                      # Database abstraction (SQLite & Turso support, user/tx CRUD)
+│   ├── api.py                     # REST endpoints (auth, admin, user, guest & Excel APIs)
+│   ├── auth.py                    # RBAC decorators (@login_required, @admin_required, @guest_required, CSRF)
+│   ├── config.py                  # Centralized configuration & environment parsing (4MB body limit)
+│   ├── db.py                      # Database abstraction (SQLite & Turso, users, txs, guest_txs)
 │   ├── validators.py              # Input validation (registration, login, profile, tx)
-│   ├── views.py                   # Web routes (login, register, logout, profile, admin, dashboard)
+│   ├── views.py                   # Web routes (login, register, guest trial, logout, profile, admin)
 │   ├── services/
+│   │   ├── excel.py               # Excel .xlsx export, template generator & formula-safe parser
 │   │   ├── exchange.py            # Frankfurter currency exchange service
-│   │   └── reports.py             # Date ranges, totals, Matplotlib charts
+│   │   └── reports.py             # Date ranges, totals, Matplotlib charts, guest summaries
 │   ├── static/
-│   │   ├── app.js                 # Frontend application script (CRUD, edit, 401 redirect)
-│   │   └── style.css              # Financial SaaS dashboard stylesheet
+│   │   ├── app.js                 # Frontend application script (CRUD, edit, guest mode, Excel modal)
+│   │   └── style.css              # Financial dashboard stylesheet with guest banner & import modal
 │   └── templates/
 │       ├── admin.html             # Admin user management & stats dashboard
-│       ├── index.html             # Personal expense tracker dashboard
-│       ├── login.html             # User login page
+│       ├── index.html             # Personal & Guest expense tracker dashboard
+│       ├── login.html             # User login page with Continue as Guest trial button
 │       ├── profile.html           # User profile & password management page
 │       └── register.html          # User registration page
 ├── data/
@@ -216,6 +223,8 @@ expense_tracker/
     ├── conftest.py                # Pytest fixtures (authenticated client, admin_client, unauth_client)
     ├── test_api.py                # Core expense API and endpoint tests
     ├── test_auth_rbac.py          # Multi-user, RBAC, IDOR, and auth tests
+    ├── test_excel.py              # Excel import, export, formatting, and security tests
+    ├── test_guest_mode.py         # Guest trial, one-time restriction, isolation, and expiry tests
     ├── test_migration.py          # Data migration utility tests
     └── test_turso_db.py           # Turso db abstraction & security tests
 ```
