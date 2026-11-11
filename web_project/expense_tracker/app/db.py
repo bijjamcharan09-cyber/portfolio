@@ -44,6 +44,20 @@ SCHEMA_STATEMENTS = [
     created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 )""",
     "CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)",
+    """CREATE TABLE IF NOT EXISTS guest_transactions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    guest_id       TEXT    NOT NULL,
+    type           TEXT    NOT NULL CHECK (type IN ('income', 'expense')),
+    amount_cents   INTEGER NOT NULL CHECK (amount_cents > 0),
+    category       TEXT    NOT NULL,
+    note           TEXT    NOT NULL DEFAULT '',
+    payment_method TEXT    NOT NULL DEFAULT '',
+    date           TEXT    NOT NULL,
+    created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at     TEXT    NOT NULL
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_guest_tx_guest ON guest_transactions(guest_id)",
+    "CREATE INDEX IF NOT EXISTS idx_guest_tx_expires ON guest_transactions(expires_at)",
 ]
 
 # Backwards compatible full SCHEMA string
@@ -192,6 +206,20 @@ def init_schema(conn=None):
         except Exception:
             pass
 
+        # Ensure payment_method column exists on transactions table
+        try:
+            cur = conn.execute("PRAGMA table_info(transactions)")
+            columns = []
+            for r in cur.fetchall():
+                if isinstance(r, (tuple, list)):
+                    columns.append(r[1])
+                elif hasattr(r, "keys") and "name" in r.keys():
+                    columns.append(r["name"])
+            if "payment_method" not in columns and len(columns) > 0:
+                conn.execute("ALTER TABLE transactions ADD COLUMN payment_method TEXT DEFAULT ''")
+        except Exception:
+            pass
+
         conn.commit()
     finally:
         if close_when_done:
@@ -228,6 +256,12 @@ def row_to_dict(row):
     try:
         if "user_id" in row.keys() and row["user_id"] is not None:
             data["user_id"] = row["user_id"]
+    except Exception:
+        pass
+    # Include payment_method if present in row
+    try:
+        if "payment_method" in row.keys() and row["payment_method"]:
+            data["payment_method"] = row["payment_method"]
     except Exception:
         pass
     return data
@@ -360,17 +394,30 @@ def add_transaction(t, user_id=None):
     """Insert a new transaction and return its ID, isolating by user_id."""
     conn = get_db()
     uid = user_id or t.get("user_id")
+    pm = str(t.get("payment_method") or "")
 
-    if uid is not None:
-        cur = conn.execute(
-            "INSERT INTO transactions (user_id, type, amount_cents, category, note, date) VALUES (?, ?, ?, ?, ?, ?)",
-            (uid, t["type"], t["amount_cents"], t["category"], t["note"], t["date"]),
-        )
-    else:
-        cur = conn.execute(
-            "INSERT INTO transactions (type, amount_cents, category, note, date) VALUES (?, ?, ?, ?, ?)",
-            (t["type"], t["amount_cents"], t["category"], t["note"], t["date"]),
-        )
+    try:
+        if uid is not None:
+            cur = conn.execute(
+                "INSERT INTO transactions (user_id, type, amount_cents, category, note, payment_method, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uid, t["type"], t["amount_cents"], t["category"], t["note"], pm, t["date"]),
+            )
+        else:
+            cur = conn.execute(
+                "INSERT INTO transactions (type, amount_cents, category, note, payment_method, date) VALUES (?, ?, ?, ?, ?, ?)",
+                (t["type"], t["amount_cents"], t["category"], t["note"], pm, t["date"]),
+            )
+    except Exception:
+        if uid is not None:
+            cur = conn.execute(
+                "INSERT INTO transactions (user_id, type, amount_cents, category, note, date) VALUES (?, ?, ?, ?, ?, ?)",
+                (uid, t["type"], t["amount_cents"], t["category"], t["note"], t["date"]),
+            )
+        else:
+            cur = conn.execute(
+                "INSERT INTO transactions (type, amount_cents, category, note, date) VALUES (?, ?, ?, ?, ?)",
+                (t["type"], t["amount_cents"], t["category"], t["note"], t["date"]),
+            )
     conn.commit()
     return cur.lastrowid
 
@@ -402,16 +449,29 @@ def list_transactions(start, end, user_id=None):
 def update_transaction(tx_id, t, user_id=None) -> bool:
     """Update an existing transaction if owned by the user (IDOR prevention)."""
     conn = get_db()
-    if user_id is not None:
-        cur = conn.execute(
-            "UPDATE transactions SET type = ?, amount_cents = ?, category = ?, note = ?, date = ? WHERE id = ? AND user_id = ?",
-            (t["type"], t["amount_cents"], t["category"], t["note"], t["date"], tx_id, user_id),
-        )
-    else:
-        cur = conn.execute(
-            "UPDATE transactions SET type = ?, amount_cents = ?, category = ?, note = ?, date = ? WHERE id = ?",
-            (t["type"], t["amount_cents"], t["category"], t["note"], t["date"], tx_id),
-        )
+    pm = str(t.get("payment_method") or "")
+    try:
+        if user_id is not None:
+            cur = conn.execute(
+                "UPDATE transactions SET type = ?, amount_cents = ?, category = ?, note = ?, payment_method = ?, date = ? WHERE id = ? AND user_id = ?",
+                (t["type"], t["amount_cents"], t["category"], t["note"], pm, t["date"], tx_id, user_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE transactions SET type = ?, amount_cents = ?, category = ?, note = ?, payment_method = ?, date = ? WHERE id = ?",
+                (t["type"], t["amount_cents"], t["category"], t["note"], pm, t["date"], tx_id),
+            )
+    except Exception:
+        if user_id is not None:
+            cur = conn.execute(
+                "UPDATE transactions SET type = ?, amount_cents = ?, category = ?, note = ?, date = ? WHERE id = ? AND user_id = ?",
+                (t["type"], t["amount_cents"], t["category"], t["note"], t["date"], tx_id, user_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE transactions SET type = ?, amount_cents = ?, category = ?, note = ?, date = ? WHERE id = ?",
+                (t["type"], t["amount_cents"], t["category"], t["note"], t["date"], tx_id),
+            )
     conn.commit()
     return cur.rowcount > 0
 
@@ -425,3 +485,120 @@ def delete_transaction(tx_id, user_id=None):
         cur = conn.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
     conn.commit()
     return cur.rowcount > 0
+
+
+# ============================================================================
+# Guest Mode Isolated Database Operations
+# ============================================================================
+
+def add_guest_transaction(guest_id: str, t: dict, expires_at: str) -> int:
+    """Insert a transaction into isolated temporary guest storage."""
+    conn = get_db()
+    pm = str(t.get("payment_method") or "")
+    cur = conn.execute(
+        "INSERT INTO guest_transactions (guest_id, type, amount_cents, category, note, payment_method, date, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (guest_id, t["type"], t["amount_cents"], t["category"], t["note"], pm, t["date"], expires_at),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_guest_transaction(guest_id: str, tx_id: int):
+    """Retrieve a single guest transaction strictly scoped to guest_id."""
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return get_db().execute(
+        "SELECT * FROM guest_transactions WHERE id = ? AND guest_id = ? AND expires_at > ?",
+        (tx_id, guest_id, now_iso),
+    ).fetchone()
+
+
+def list_guest_transactions(guest_id: str, start=None, end=None):
+    """List transactions for a guest session within optional date bounds."""
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if start and end:
+        s, e = start.isoformat(), end.isoformat()
+        return get_db().execute(
+            "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? "
+            "ORDER BY date DESC, id DESC LIMIT 500",
+            (guest_id, now_iso, s, e),
+        ).fetchall()
+    return get_db().execute(
+        "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? "
+        "ORDER BY date DESC, id DESC LIMIT 500",
+        (guest_id, now_iso),
+    ).fetchall()
+
+
+def update_guest_transaction(guest_id: str, tx_id: int, t: dict) -> bool:
+    """Update a guest transaction strictly scoped to the active guest."""
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    pm = str(t.get("payment_method") or "")
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE guest_transactions SET type = ?, amount_cents = ?, category = ?, note = ?, payment_method = ?, date = ? "
+        "WHERE id = ? AND guest_id = ? AND expires_at > ?",
+        (t["type"], t["amount_cents"], t["category"], t["note"], pm, t["date"], tx_id, guest_id, now_iso),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_guest_transaction(guest_id: str, tx_id: int) -> bool:
+    """Delete a guest transaction strictly scoped to the active guest."""
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    conn = get_db()
+    cur = conn.execute(
+        "DELETE FROM guest_transactions WHERE id = ? AND guest_id = ? AND expires_at > ?",
+        (tx_id, guest_id, now_iso),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_guest_data(guest_id: str) -> int:
+    """Clean up all transactions for a specific guest upon exit or expiration."""
+    conn = get_db()
+    cur = conn.execute("DELETE FROM guest_transactions WHERE guest_id = ?", (guest_id,))
+    conn.commit()
+    return cur.rowcount
+
+
+def cleanup_expired_guests() -> int:
+    """Opportunistically purge expired guest transactions across the database."""
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    conn = get_db()
+    cur = conn.execute("DELETE FROM guest_transactions WHERE expires_at <= ?", (now_iso,))
+    conn.commit()
+    return cur.rowcount
+
+
+def seed_guest_sample_data(guest_id: str, expires_at: str):
+    """Seed realistic financial records into isolated guest storage."""
+    from datetime import date
+    today = date.today()
+    y, m = today.year, today.month
+
+    # Generate dates safely within the current month
+    d1 = date(y, m, 1).isoformat()
+    d2 = date(y, m, min(3, today.day)).isoformat()
+    d3 = date(y, m, min(5, today.day)).isoformat()
+    d4 = date(y, m, min(7, today.day)).isoformat()
+    d5 = date(y, m, min(9, today.day)).isoformat()
+    d6 = date(y, m, min(10, today.day)).isoformat()
+    d7 = date(y, m, min(11, today.day)).isoformat()
+
+    sample_records = [
+        {"type": "income", "amount_cents": 7500000, "category": "Salary", "note": "Monthly Tech Salary", "payment_method": "Direct Deposit", "date": d1},
+        {"type": "expense", "amount_cents": 2200000, "category": "Rent", "note": "Apartment Monthly Rent", "payment_method": "Bank Transfer", "date": d2},
+        {"type": "expense", "amount_cents": 345000, "category": "Bills", "note": "Fiber Broadband & Utilities", "payment_method": "UPI", "date": d3},
+        {"type": "expense", "amount_cents": 482000, "category": "Food", "note": "Organic Supermarket Groceries", "payment_method": "Credit Card", "date": d4},
+        {"type": "expense", "amount_cents": 210000, "category": "Transport", "note": "Metro Smartcard & Fuel", "payment_method": "Debit Card", "date": d5},
+        {"type": "income", "amount_cents": 1850000, "category": "Freelance", "note": "UI/UX Design Consulting", "payment_method": "Direct Deposit", "date": d6},
+        {"type": "expense", "amount_cents": 260000, "category": "Entertainment", "note": "Weekend Dining & Cinema", "payment_method": "Credit Card", "date": d7},
+        {"type": "expense", "amount_cents": 145000, "category": "Health", "note": "Pharmacy & Health Vitamins", "payment_method": "Cash", "date": d7},
+    ]
+
+    for rec in sample_records:
+        add_guest_transaction(guest_id, rec, expires_at)
+

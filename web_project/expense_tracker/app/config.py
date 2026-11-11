@@ -60,7 +60,8 @@ class Config:
     EXCHANGE_API_URL = os.getenv("EXCHANGE_API_URL", "https://api.frankfurter.app/latest")
     EXCHANGE_TIMEOUT = 5  # seconds
     DEBUG = os.getenv("FLASK_DEBUG", "0") == "1"
-    MAX_CONTENT_LENGTH = 16 * 1024  # reject huge request bodies
+    MAX_CONTENT_LENGTH = 4 * 1024 * 1024  # 4 MB max body size for secure Excel uploads
+    GUEST_SESSION_TIMEOUT = int(os.getenv("GUEST_SESSION_TIMEOUT", "1800"))  # 30 minutes
 
     @classmethod
     def validate_production_config(cls, config_dict=None):

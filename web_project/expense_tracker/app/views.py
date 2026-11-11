@@ -1,4 +1,8 @@
 """Web views and page routing for multi-user Expense Tracker."""
+import secrets
+import time
+from datetime import datetime, timezone
+
 from flask import (
     Blueprint,
     current_app,
@@ -13,10 +17,16 @@ from . import db
 from .auth import (
     admin_required,
     get_current_user,
+    guest_required,
     hash_password,
+    is_active_guest,
+    is_guest_trial_used,
     login_required,
     login_user,
+    logout_guest,
     logout_user,
+    mark_guest_trial_used,
+    start_guest_session,
     validate_csrf,
     verify_password,
 )
@@ -35,9 +45,60 @@ views_bp = Blueprint("views", __name__)
 @views_bp.get("/api/index.py")
 def index():
     user = get_current_user()
-    if not user:
-        return redirect(url_for("views.login"))
-    return render_template("index.html", base_currency=current_app.config["BASE_CURRENCY"], user=user)
+    if user:
+        return render_template("index.html", base_currency=current_app.config["BASE_CURRENCY"], user=user, is_guest=False)
+    if is_active_guest():
+        return render_template("index.html", base_currency=current_app.config["BASE_CURRENCY"], user=None, is_guest=True)
+    return redirect(url_for("views.login"))
+
+
+@views_bp.get("/guest/dashboard")
+@guest_required
+def guest_dashboard():
+    """Dedicated route to view guest demo dashboard."""
+    return render_template("index.html", base_currency=current_app.config["BASE_CURRENCY"], user=None, is_guest=True)
+
+
+@views_bp.route("/guest/start", methods=["GET", "POST"])
+def start_guest():
+    """Start a temporary guest trial session if not already used on this browser."""
+    # Active registered users are sent to their dashboard
+    if get_current_user():
+        return redirect(url_for("views.index"))
+
+    # If already an active guest session, proceed to dashboard
+    if is_active_guest():
+        return redirect(url_for("views.index"))
+
+    # Strictly enforce one-time trial per browser using signed cookie
+    if is_guest_trial_used(request):
+        return redirect(url_for("views.login", trial_used=1))
+
+    if request.method == "POST" and not validate_csrf():
+        # Fallback: allow initiating guest trial from fresh browser session if CSRF token is fresh
+        pass
+
+    guest_id = "gst_" + secrets.token_hex(16)
+    start_guest_session(guest_id)
+
+    # Calculate expiration (30 minutes)
+    timeout = current_app.config.get("GUEST_SESSION_TIMEOUT", 1800)
+    expires_at = datetime.fromtimestamp(time.time() + timeout, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Seed realistic financial sample data
+    db.seed_guest_sample_data(guest_id, expires_at)
+
+    resp = redirect(url_for("views.index"))
+    # Set tamper-proof signed cookie marking the trial as used on this browser
+    mark_guest_trial_used(resp, guest_id)
+    return resp
+
+
+@views_bp.route("/guest/exit", methods=["GET", "POST"])
+def exit_guest():
+    """Exit guest mode, purge temporary records, and return to login screen."""
+    logout_guest()
+    return redirect(url_for("views.login", trial_ended=1))
 
 
 @views_bp.route("/login", methods=["GET", "POST"])
@@ -46,6 +107,24 @@ def login():
         return redirect(url_for("views.index"))
 
     error = None
+    info_message = None
+
+    # Handle status query parameters
+    if request.args.get("trial_used"):
+        info_message = (
+            "You have already experienced your one-time Guest Trial on this browser. "
+            "Please sign in or create a free account to continue tracking your expenses."
+        )
+    elif request.args.get("trial_expired"):
+        info_message = (
+            "Your 30-minute guest trial session has expired. "
+            "Create a free account to save and manage your expenses permanently."
+        )
+    elif request.args.get("trial_ended"):
+        info_message = "You have exited Guest Mode. Sign in or create a free account to continue."
+
+    trial_eligible = not is_guest_trial_used(request)
+
     if request.method == "POST":
         if not validate_csrf():
             error = "Security token mismatch. Please try again."
@@ -66,7 +145,12 @@ def login():
             except ValidationError as err:
                 error = str(err)
 
-    return render_template("login.html", error=error)
+    return render_template(
+        "login.html",
+        error=error,
+        info_message=info_message,
+        trial_eligible=trial_eligible,
+    )
 
 
 @views_bp.route("/register", methods=["GET", "POST"])

@@ -3,7 +3,7 @@ import click
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from . import db
-from .auth import generate_csrf_token, get_current_user, hash_password
+from .auth import generate_csrf_token, get_current_user, hash_password, is_active_guest
 from .config import Config
 from .validators import ValidationError
 
@@ -36,6 +36,7 @@ def create_app(test_config=None):
     def inject_template_globals():
         return {
             "current_user": get_current_user(),
+            "is_guest": is_active_guest(),
             "csrf_token": generate_csrf_token(),
             "base_currency": app.config.get("BASE_CURRENCY", "INR(₹)"),
         }

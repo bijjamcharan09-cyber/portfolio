@@ -1,14 +1,31 @@
 """REST API endpoints. Routes stay thin: validate -> call a helper -> return JSON.
 Enforces authentication, user-level data isolation, and RBAC on every protected route.
 """
-from datetime import date
+from datetime import date, datetime, timezone
+import io
+import time
 
-from flask import Blueprint, Response, current_app, jsonify, request, session
+from flask import Blueprint, Response, current_app, jsonify, request, send_file, session
 
 from . import db
-from .auth import admin_required, get_current_user, hash_password, login_required, login_user, logout_user, verify_password
+from .auth import (
+    admin_required,
+    get_current_guest_id,
+    get_current_user,
+    guest_required,
+    hash_password,
+    login_required,
+    login_user,
+    logout_user,
+    verify_password,
+)
+from .services.excel import (
+    export_expenses_to_excel,
+    generate_template_excel,
+    import_expenses_from_excel,
+)
 from .services.exchange import ExchangeError, get_rate
-from .services.reports import date_range, render_chart, summarize
+from .services.reports import date_range, render_chart, summarize, summarize_guest
 from .validators import CATEGORIES, ValidationError, parse_date, validate_login, validate_registration, validate_transaction
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -256,3 +273,275 @@ def convert_balance():
     except ExchangeError as err:
         return jsonify(error=str(err)), 502
     return jsonify(base=base, to=target, rate=rate, balance=balance, converted=round(balance * rate, 2))
+
+
+# ============================================================================
+# Excel Import & Export Endpoints (Registered Users)
+# ============================================================================
+
+@bp.get("/excel/template")
+def download_excel_template():
+    """Download blank standardized Excel template with formatting and sample data."""
+    buf = generate_template_excel()
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="expense_template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@bp.get("/excel/export")
+@login_required
+def export_user_excel():
+    """Export authenticated user's transactions to an Excel spreadsheet."""
+    user = get_current_user()
+    user_id = user["id"]
+
+    if "period" in request.args:
+        start, end = _range()
+        raw_rows = db.list_transactions(start, end, user_id=user_id)
+    else:
+        conn = db.get_db()
+        raw_rows = conn.execute(
+            "SELECT * FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC",
+            (user_id,),
+        ).fetchall()
+
+    txs = [db.row_to_dict(r) for r in raw_rows]
+    buf = export_expenses_to_excel(
+        txs,
+        title=f"{user['full_name']} Expense Report",
+        base_currency=current_app.config["BASE_CURRENCY"],
+    )
+    today_str = date.today().strftime("%Y_%m_%d")
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f"expense_report_{today_str}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@bp.post("/excel/import")
+@login_required
+def import_user_excel():
+    """Import expenses from an uploaded Excel spreadsheet for the authenticated user."""
+    if "file" not in request.files:
+        return jsonify(error="No file uploaded. Please select an .xlsx file."), 400
+
+    uploaded_file = request.files["file"]
+    if not uploaded_file.filename:
+        return jsonify(error="No file selected."), 400
+
+    if not uploaded_file.filename.lower().endswith(".xlsx"):
+        return jsonify(error="Only .xlsx Excel files are supported."), 400
+
+    user = get_current_user()
+    user_id = user["id"]
+
+    try:
+        parsed = import_expenses_from_excel(uploaded_file.stream)
+    except ValidationError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as exc:
+        return jsonify(error=f"Could not parse Excel file: {exc}"), 400
+
+    valid_records = parsed["valid_records"]
+    inserted_count = 0
+    for rec in valid_records:
+        db.add_transaction(rec, user_id=user_id)
+        inserted_count += 1
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully imported {inserted_count} transactions.",
+        "success_count": inserted_count,
+        "rejected_count": parsed["rejected_count"],
+        "errors": parsed["errors"],
+    }), 200
+
+
+# ============================================================================
+# Guest Mode Isolated API Endpoints
+# ============================================================================
+
+@bp.get("/guest/categories")
+def guest_categories():
+    """Return available categories for guest demo."""
+    return jsonify(CATEGORIES)
+
+
+@bp.get("/guest/transactions")
+@guest_required
+def guest_list_transactions():
+    """List transactions for the active guest session."""
+    start, end = _range()
+    guest_id = get_current_guest_id()
+    rows = db.list_guest_transactions(guest_id, start, end)
+    return jsonify([db.row_to_dict(r) for r in rows])
+
+
+@bp.post("/guest/transactions")
+@guest_required
+def guest_create_transaction():
+    """Create a transaction in temporary guest storage."""
+    data = validate_transaction(request.get_json(silent=True))
+    guest_id = get_current_guest_id()
+    timeout = current_app.config.get("GUEST_SESSION_TIMEOUT", 1800)
+    expires_at = datetime.fromtimestamp(time.time() + timeout, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    new_id = db.add_guest_transaction(guest_id, data, expires_at)
+    row = db.get_guest_transaction(guest_id, new_id)
+    return jsonify(db.row_to_dict(row)), 201
+
+
+@bp.get("/guest/transactions/<int:tx_id>")
+@guest_required
+def guest_get_single_transaction(tx_id):
+    """Retrieve single guest transaction."""
+    guest_id = get_current_guest_id()
+    row = db.get_guest_transaction(guest_id, tx_id)
+    if not row:
+        return jsonify(error="transaction not found"), 404
+    return jsonify(db.row_to_dict(row))
+
+
+@bp.put("/guest/transactions/<int:tx_id>")
+@guest_required
+def guest_update_transaction(tx_id):
+    """Update a guest transaction."""
+    guest_id = get_current_guest_id()
+    existing = db.get_guest_transaction(guest_id, tx_id)
+    if not existing:
+        return jsonify(error="transaction not found"), 404
+
+    data = validate_transaction(request.get_json(silent=True))
+    db.update_guest_transaction(guest_id, tx_id, data)
+    updated = db.get_guest_transaction(guest_id, tx_id)
+    return jsonify(db.row_to_dict(updated)), 200
+
+
+@bp.delete("/guest/transactions/<int:tx_id>")
+@guest_required
+def guest_delete_transaction(tx_id):
+    """Delete a guest transaction."""
+    guest_id = get_current_guest_id()
+    if not db.delete_guest_transaction(guest_id, tx_id):
+        return jsonify(error="transaction not found"), 404
+    return "", 204
+
+
+@bp.get("/guest/reports/summary")
+@guest_required
+def guest_report_summary():
+    """Generate summary for the active guest session."""
+    start, end = _range()
+    guest_id = get_current_guest_id()
+    return jsonify(summarize_guest(start, end, guest_id=guest_id))
+
+
+@bp.get("/guest/reports/chart.png")
+@guest_required
+def guest_report_chart():
+    """Render chart for the active guest session."""
+    start, end = _range()
+    guest_id = get_current_guest_id()
+    return Response(render_chart(summarize_guest(start, end, guest_id=guest_id)), mimetype="image/png")
+
+
+@bp.get("/guest/convert")
+@guest_required
+def guest_convert_balance():
+    """Convert guest period balance into target currency."""
+    target = request.args.get("to", "").upper()
+    if len(target) != 3 or not target.isalpha():
+        raise ValidationError("'to' must be a 3-letter currency code, e.g. EUR")
+    start, end = _range()
+    guest_id = get_current_guest_id()
+    base = current_app.config["BASE_CURRENCY"]
+    balance = summarize_guest(start, end, guest_id=guest_id)["balance"]
+    try:
+        rate = get_rate(base, target)
+    except ExchangeError as err:
+        return jsonify(error=str(err)), 502
+    return jsonify(base=base, to=target, rate=rate, balance=balance, converted=round(balance * rate, 2))
+
+
+@bp.get("/guest/excel/template")
+def guest_excel_template():
+    """Download blank Excel template for guest demo."""
+    buf = generate_template_excel()
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="expense_template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@bp.get("/guest/excel/export")
+@guest_required
+def guest_export_excel():
+    """Export guest demo transactions to Excel."""
+    guest_id = get_current_guest_id()
+    if "period" in request.args:
+        start, end = _range()
+        raw_rows = db.list_guest_transactions(guest_id, start, end)
+    else:
+        raw_rows = db.list_guest_transactions(guest_id)
+
+    txs = [db.row_to_dict(r) for r in raw_rows]
+    buf = export_expenses_to_excel(
+        txs,
+        title="Guest Demo Expense Report",
+        base_currency=current_app.config["BASE_CURRENCY"],
+    )
+    today_str = date.today().strftime("%Y_%m_%d")
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f"guest_demo_expenses_{today_str}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@bp.post("/guest/excel/import")
+@guest_required
+def guest_import_excel():
+    """Import expenses from an Excel spreadsheet into temporary guest data."""
+    if "file" not in request.files:
+        return jsonify(error="No file uploaded. Please select an .xlsx file."), 400
+
+    uploaded_file = request.files["file"]
+    if not uploaded_file.filename:
+        return jsonify(error="No file selected."), 400
+
+    if not uploaded_file.filename.lower().endswith(".xlsx"):
+        return jsonify(error="Only .xlsx Excel files are supported."), 400
+
+    guest_id = get_current_guest_id()
+    try:
+        parsed = import_expenses_from_excel(uploaded_file.stream)
+    except ValidationError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as exc:
+        return jsonify(error=f"Could not parse Excel file: {exc}"), 400
+
+    timeout = current_app.config.get("GUEST_SESSION_TIMEOUT", 1800)
+    expires_at = datetime.fromtimestamp(time.time() + timeout, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    valid_records = parsed["valid_records"]
+    inserted_count = 0
+    for rec in valid_records:
+        db.add_guest_transaction(guest_id, rec, expires_at)
+        inserted_count += 1
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully imported {inserted_count} demo transactions.",
+        "success_count": inserted_count,
+        "rejected_count": parsed["rejected_count"],
+        "errors": parsed["errors"],
+    }), 200
+

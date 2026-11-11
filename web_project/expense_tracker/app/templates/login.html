@@ -23,6 +23,12 @@
       </div>
       {% endif %}
 
+      {% if info_message %}
+      <div class="alert alert-info" role="status">
+        {{ info_message }}
+      </div>
+      {% endif %}
+
       <form method="POST" action="{{ url_for('views.login') }}{% if request.args.get('next') %}?next={{ request.args.get('next') | urlencode }}{% endif %}" class="auth-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
@@ -38,6 +44,30 @@
 
         <button type="submit" class="btn-primary">Sign In</button>
       </form>
+
+      <div class="guest-trial-wrapper">
+        <div class="auth-divider"><span>OR</span></div>
+        {% if trial_eligible %}
+        <form method="POST" action="{{ url_for('views.start_guest') }}" class="guest-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn-guest-trial" id="btn-guest-trial">
+            <span class="guest-icon" aria-hidden="true">⚡</span>
+            <span>Try Demo / Continue as Guest</span>
+          </button>
+        </form>
+        <p class="guest-hint">Instant 30-minute demo with preloaded sample data. No credit card or signup required.</p>
+        {% else %}
+        <div class="trial-exhausted-card">
+          <div class="trial-exhausted-header">
+            <span class="badge badge-trial-used">One-Time Trial Used</span>
+          </div>
+          <p class="trial-exhausted-text">
+            The guest demo has already been used on this browser. Create a free account or sign in to continue managing your expenses.
+          </p>
+          <a href="{{ url_for('views.register') }}" class="btn-outline-cta">Create Free Account</a>
+        </div>
+        {% endif %}
+      </div>
 
       <div class="auth-footer">
         <p>Don't have an account? <a href="{{ url_for('views.register') }}">Create an account</a></p>

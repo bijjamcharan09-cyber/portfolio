@@ -3,8 +3,11 @@ Provides login/role decorators, password hashing, and session management.
 """
 from functools import wraps
 import secrets
+import time
+from datetime import datetime, timezone
 
 from flask import current_app, g, jsonify, redirect, request, session, url_for
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import db
@@ -65,7 +68,7 @@ def login_required(f):
         if not user:
             if request.path.startswith("/api/"):
                 return jsonify(error="Authentication required. Please log in."), 401
-            return redirect(url_for("login", next=request.path))
+            return redirect(url_for("views.login", next=request.path))
         return f(*args, **kwargs)
 
     return decorated_function
@@ -124,3 +127,116 @@ def validate_csrf():
     )
 
     return bool(received and secrets.compare_digest(str(received), str(expected)))
+
+
+# ============================================================================
+# Guest Mode Trial & Lifecycle Helpers
+# ============================================================================
+
+GUEST_TRIAL_COOKIE_NAME = "guest_trial_record"
+
+
+def get_guest_trial_serializer() -> URLSafeTimedSerializer:
+    """Return timed serializer for signing tamper-proof guest trial tracking cookies."""
+    secret = current_app.config.get("SECRET_KEY", "fallback-secret")
+    return URLSafeTimedSerializer(secret, salt="guest-trial-auth-v1")
+
+
+def is_guest_trial_used(req=None) -> bool:
+    """Verify if the one-time guest trial cookie has already been recorded on this browser.
+
+    Limitation Note: While this signed cookie prevents normal browser reuse and resists tampering,
+    clearing browser cookies/storage or switching browsers/devices will naturally allow a fresh trial.
+    Invasive device fingerprinting is explicitly avoided per security guidelines.
+    """
+    r = req or request
+    token = r.cookies.get(GUEST_TRIAL_COOKIE_NAME)
+    if not token:
+        return False
+
+    serializer = get_guest_trial_serializer()
+    try:
+        data = serializer.loads(token)
+        return bool(data.get("trial_used"))
+    except (BadSignature, SignatureExpired, Exception):
+        return False
+
+
+def mark_guest_trial_used(response, guest_id: str):
+    """Set a signed, persistent cookie recording that this browser has consumed its guest trial."""
+    serializer = get_guest_trial_serializer()
+    token = serializer.dumps({
+        "trial_used": True,
+        "guest_id": guest_id,
+        "issued_at": time.time(),
+    })
+    is_secure = bool(current_app.config.get("SESSION_COOKIE_SECURE", False))
+    response.set_cookie(
+        GUEST_TRIAL_COOKIE_NAME,
+        token,
+        max_age=365 * 24 * 3600,  # 1 year
+        httponly=True,
+        samesite="Lax",
+        secure=is_secure,
+    )
+
+
+def start_guest_session(guest_id: str):
+    """Initialize an isolated guest session in the Flask session cookie."""
+    session.clear()
+    session.permanent = True
+    session["is_guest"] = True
+    session["guest_id"] = guest_id
+    session["guest_role"] = "guest"
+    session["guest_created_at"] = datetime.now(timezone.utc).isoformat()
+    session["guest_last_active"] = time.time()
+
+
+def logout_guest():
+    """Terminate active guest session and purge temporary data."""
+    guest_id = session.get("guest_id")
+    if guest_id:
+        try:
+            db.delete_guest_data(guest_id)
+        except Exception:
+            pass
+    session.clear()
+
+
+def is_active_guest() -> bool:
+    """Check if the current request belongs to an active, non-expired guest session."""
+    if not session.get("is_guest") or not session.get("guest_id"):
+        return False
+
+    timeout = current_app.config.get("GUEST_SESSION_TIMEOUT", 1800)
+    last_active = session.get("guest_last_active", 0)
+    now = time.time()
+
+    # Expire after 30 minutes of inactivity
+    if (now - last_active) > timeout:
+        logout_guest()
+        return False
+
+    session["guest_last_active"] = now
+    return True
+
+
+def get_current_guest_id() -> str | None:
+    """Return the active guest ID or None if not an active guest."""
+    if is_active_guest():
+        return session.get("guest_id")
+    return None
+
+
+def guest_required(f):
+    """Ensure the request is made by an active, non-expired guest session."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_active_guest():
+            if request.path.startswith("/api/"):
+                return jsonify(error="Guest session expired or invalid. Please log in or register."), 401
+            return redirect(url_for("views.login", trial_expired=1))
+        return f(*args, **kwargs)
+
+    return decorated_function
+

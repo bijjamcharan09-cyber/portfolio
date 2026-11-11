@@ -4,18 +4,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Expense Tracker</title>
+  <title>{% if is_guest %}Guest Demo - {% endif %}Expense Tracker</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body data-currency="{{ base_currency }}">
+<body data-currency="{{ base_currency }}" data-guest="{{ 'true' if is_guest else 'false' }}">
+  {% if is_guest %}
+  <aside class="guest-banner" role="status">
+    <div class="guest-banner-left">
+      <span class="badge-guest-demo">GUEST DEMO</span>
+      <span class="guest-banner-text">You're exploring Expense Tracker in Guest Mode. Your demo data is temporary.</span>
+    </div>
+    <div class="guest-banner-right">
+      <a href="{{ url_for('views.register') }}" class="btn-banner-cta">Create Free Account</a>
+      <a href="{{ url_for('views.exit_guest') }}" class="btn-banner-exit" title="Exit Guest Session">Exit Trial</a>
+    </div>
+  </aside>
+  {% endif %}
+
   <header>
     <div class="brand-wrap">
       <h1>Expense Tracker</h1>
     </div>
     <div class="header-right">
       <p id="balance-line">Balance <strong id="balance">0.00</strong> {{ base_currency }}</p>
-      {% if current_user %}
+      {% if is_guest %}
+      <nav class="user-nav">
+        <span class="user-pill guest-pill">
+          <span class="user-avatar guest-avatar">G</span>
+          <span class="user-name">Guest Explorer</span>
+          <span class="badge badge-guest">Demo</span>
+        </span>
+        <a href="{{ url_for('views.register') }}" class="nav-btn nav-btn-primary">Create Free Account</a>
+        <a href="{{ url_for('views.exit_guest') }}" class="nav-btn nav-btn-outline">Exit</a>
+      </nav>
+      {% elif current_user %}
       <nav class="user-nav">
         <span class="user-pill">
           <span class="user-avatar">{{ current_user.full_name[:1] | upper }}</span>
@@ -52,7 +75,17 @@
     </section>
 
     <section class="panel wide" aria-labelledby="sum-h">
-      <h2 id="sum-h">Summary</h2>
+      <div class="panel-header-row">
+        <h2 id="sum-h">Summary</h2>
+        <div class="excel-actions">
+          <button type="button" id="btn-open-import" class="btn-action" title="Import expenses from Excel">
+            <span class="action-icon">📥</span> Import Excel
+          </button>
+          <button type="button" id="btn-export-excel" class="btn-action" title="Export report to Excel">
+            <span class="action-icon">📊</span> Export Excel
+          </button>
+        </div>
+      </div>
       <div class="controls">
         <div class="tabs" id="tabs">
           <button data-period="day">Day</button>
@@ -76,7 +109,12 @@
     </section>
 
     <section class="panel wide" aria-labelledby="list-h">
-      <h2 id="list-h">Transactions in this period</h2>
+      <div class="panel-header-row">
+        <h2 id="list-h">Transactions in this period</h2>
+        {% if is_guest %}
+        <span class="demo-tag">Temporary Sample Data</span>
+        {% endif %}
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -91,9 +129,48 @@
           <tbody id="rows"></tbody>
         </table>
       </div>
-      <p id="empty" hidden>Nothing here yet. Add your first transaction above.</p>
+      <p id="empty" hidden>Nothing here yet. Add your first transaction above or import an Excel spreadsheet.</p>
     </section>
   </main>
+
+  <!-- Excel Import Modal -->
+  <div id="import-modal" class="modal" hidden role="dialog" aria-labelledby="modal-title" aria-modal="true">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-title">Import Expenses from Excel</h3>
+        <button type="button" class="btn-close" id="btn-close-modal" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Upload an <code>.xlsx</code> file containing columns: <strong>Date, Title, Category, Amount, Payment Method, Description</strong>.
+        </p>
+        <div class="template-wrap">
+          <a href="#" id="link-download-template" class="btn-template-link">
+            <span>📥 Download Sample Excel Template (.xlsx)</span>
+          </a>
+        </div>
+        <form id="import-form">
+          <div class="drop-zone" id="drop-zone">
+            <span class="drop-icon">📊</span>
+            <p class="drop-title">Select or drag & drop an Excel file</p>
+            <p class="drop-sub">Supported formats: .xlsx (Max size: 4 MB)</p>
+            <input type="file" name="file" id="excel-file" accept=".xlsx" required class="file-input-hidden">
+            <div id="file-preview" class="file-preview" hidden>
+              <span class="file-name" id="file-preview-name"></span>
+              <button type="button" id="btn-clear-file" class="btn-clear-file">&times;</button>
+            </div>
+          </div>
+          <div class="modal-buttons">
+            <button type="button" class="btn-outline" id="btn-cancel-import">Cancel</button>
+            <button type="submit" class="btn-primary" id="btn-submit-import">Start Import</button>
+          </div>
+        </form>
+        <div id="import-summary" class="import-summary" hidden></div>
+      </div>
+    </div>
+  </div>
+
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 

@@ -94,6 +94,50 @@ def summarize(start, end, user_id=None):
     }
 
 
+def summarize_guest(start, end, guest_id: str):
+    """Generate financial summary for isolated guest trial session."""
+    import time
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    conn = get_db()
+    s, e = start.isoformat(), end.isoformat()
+
+    totals = {"income": 0, "expense": 0}
+    for r in conn.execute(
+        "SELECT type, SUM(amount_cents) AS t FROM guest_transactions "
+        "WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? GROUP BY type",
+        (guest_id, now_iso, s, e),
+    ):
+        totals[r["type"]] = r["t"]
+
+    cats = conn.execute(
+        "SELECT category, SUM(amount_cents) AS t FROM guest_transactions "
+        "WHERE guest_id = ? AND expires_at > ? AND type = 'expense' AND date BETWEEN ? AND ? GROUP BY category ORDER BY t DESC",
+        (guest_id, now_iso, s, e),
+    ).fetchall()
+
+    monthly = (end - start).days > 92
+    bucket = "substr(date, 1, 7)" if monthly else "date"
+    rows = conn.execute(
+        f"SELECT {bucket} AS label, type, SUM(amount_cents) AS t FROM guest_transactions "
+        "WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? GROUP BY label, type",
+        (guest_id, now_iso, s, e),
+    ).fetchall()
+
+    series = {l: {"label": l, "income": 0, "expense": 0} for l in _labels(start, end, monthly)}
+    for r in rows:
+        series[r["label"]][r["type"]] = r["t"] / 100
+
+    return {
+        "start": s,
+        "end": e,
+        "income": totals["income"] / 100,
+        "expense": totals["expense"] / 100,
+        "balance": (totals["income"] - totals["expense"]) / 100,
+        "by_category": [{"category": r["category"], "total": r["t"] / 100} for r in cats],
+        "series": list(series.values()),
+    }
+
+
 def render_chart(summary):
     """Bar chart (income vs expense over time) + pie chart (expenses by category) as PNG bytes."""
     fig = Figure(figsize=(11, 4.2))  # Figure (not pyplot) is safe to use inside a web server
