@@ -1,12 +1,15 @@
 const $ = (sel) => document.querySelector(sel);
 const state = { period: "month", categories: {}, editingId: null };
+const isGuest = document.body.dataset.guest === "true";
+const apiBase = isGuest ? "/api/guest" : "/api";
+
 const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 async function api(path, options = {}) {
   options.credentials = "same-origin";
-  const res = await fetch("/api" + path, options);
+  const res = await fetch(apiBase + path, options);
   if (res.status === 401) {
-    window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
+    window.location.href = isGuest ? "/login?trial_expired=1" : "/login?next=" + encodeURIComponent(window.location.pathname);
     return null;
   }
   if (res.status === 204) return null;
@@ -121,7 +124,7 @@ async function refresh() {
     $("#income").textContent = money(summary.income);
     $("#expense").textContent = money(summary.expense);
     $("#balance").textContent = money(summary.balance);
-    $("#chart").src = "/api/reports/chart.png?" + q + "&_=" + Date.now();
+    $("#chart").src = apiBase + "/reports/chart.png?" + q + "&_=" + Date.now();
     $("#converted").textContent = "";
     renderRows(items);
   } catch (err) { say(err.message); }
@@ -174,6 +177,170 @@ $("#tabs").addEventListener("click", (e) => {
 document.querySelectorAll("input[name=type]").forEach((r) => r.addEventListener("change", fillCategories));
 $("#anchor").addEventListener("change", refresh);
 $("#days").addEventListener("change", refresh);
+
+// ============================================================================
+// Excel Export & Import Handlers
+// ============================================================================
+
+$("#btn-export-excel")?.addEventListener("click", () => {
+  window.location.href = `${apiBase}/excel/export?${query()}`;
+});
+
+const modal = $("#import-modal");
+const fileInput = $("#excel-file");
+const dropZone = $("#drop-zone");
+const preview = $("#file-preview");
+const previewName = $("#file-preview-name");
+const importSummary = $("#import-summary");
+const importForm = $("#import-form");
+
+function openImportModal() {
+  if (!modal) return;
+  modal.hidden = false;
+  if (importSummary) {
+    importSummary.hidden = true;
+    importSummary.replaceChildren();
+  }
+  resetFileInput();
+}
+
+function closeImportModal() {
+  if (!modal) return;
+  modal.hidden = true;
+  resetFileInput();
+}
+
+function resetFileInput() {
+  if (fileInput) fileInput.value = "";
+  if (preview) preview.hidden = true;
+  if (dropZone) dropZone.classList.remove("dragover");
+}
+
+$("#btn-open-import")?.addEventListener("click", openImportModal);
+$("#btn-close-modal")?.addEventListener("click", closeImportModal);
+$("#btn-cancel-import")?.addEventListener("click", closeImportModal);
+$("#modal-backdrop")?.addEventListener("click", closeImportModal);
+
+$("#btn-clear-file")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  resetFileInput();
+});
+
+$("#link-download-template")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  window.location.href = `${apiBase}/excel/template`;
+});
+
+fileInput?.addEventListener("change", () => {
+  if (fileInput.files && fileInput.files.length > 0) {
+    previewName.textContent = fileInput.files[0].name;
+    preview.hidden = false;
+  } else {
+    preview.hidden = true;
+  }
+});
+
+if (dropZone) {
+  ["dragenter", "dragover"].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.add("dragover");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove("dragover");
+    });
+  });
+
+  dropZone.addEventListener("drop", (e) => {
+    const dt = e.dataTransfer;
+    if (dt && dt.files.length > 0) {
+      fileInput.files = dt.files;
+      previewName.textContent = dt.files[0].name;
+      preview.hidden = false;
+    }
+  });
+
+  dropZone.addEventListener("click", (e) => {
+    if (e.target.id !== "btn-clear-file") {
+      fileInput.click();
+    }
+  });
+}
+
+function renderImportSummary(result) {
+  const { success_count, rejected_count, errors } = result;
+  const isErr = success_count === 0 && rejected_count > 0;
+  let html = `
+    <div class="summary-card ${isErr ? 'summary-card-error' : 'summary-card-success'}">
+      <div class="summary-stats">
+        <span class="badge badge-success">✓ ${success_count} Added</span>
+        ${rejected_count > 0 ? `<span class="badge badge-warning">⚠ ${rejected_count} Rejected</span>` : ""}
+      </div>
+      <p class="summary-msg">${result.message || "Import completed."}</p>
+  `;
+  if (errors && errors.length > 0) {
+    html += `
+      <details class="summary-details">
+        <summary>View ${errors.length} rejected row(s)</summary>
+        <ul class="error-list">
+          ${errors.map((e) => `<li><strong>Row ${e.row}:</strong> ${e.error}</li>`).join("")}
+        </ul>
+      </details>
+    `;
+  }
+  html += `</div>`;
+  importSummary.innerHTML = html;
+}
+
+importForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!fileInput.files || !fileInput.files.length) {
+    alert("Please select an .xlsx file first.");
+    return;
+  }
+
+  const submitBtn = $("#btn-submit-import");
+  const origText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Importing...";
+  importSummary.hidden = true;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    const res = await fetch(`${apiBase}/excel/import`, {
+      method: "POST",
+      credentials: "same-origin",
+      body: formData,
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Import failed.");
+    }
+
+    importSummary.hidden = false;
+    renderImportSummary(data);
+    refresh();
+  } catch (err) {
+    importSummary.hidden = false;
+    importSummary.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = origText;
+  }
+});
+
+// ============================================================================
+// Initialization
+// ============================================================================
 
 (async function init() {
   const today = new Date().toLocaleDateString("en-CA");  // YYYY-MM-DD in local time
