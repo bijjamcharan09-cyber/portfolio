@@ -26,7 +26,15 @@ from .services.excel import (
 )
 from .services.exchange import ExchangeError, get_rate
 from .services.reports import date_range, render_chart, summarize, summarize_guest
-from .validators import CATEGORIES, ValidationError, parse_date, validate_login, validate_registration, validate_transaction
+from .validators import (
+    CATEGORIES,
+    ValidationError,
+    parse_date,
+    validate_login,
+    validate_profile_update,
+    validate_registration,
+    validate_transaction,
+)
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -62,10 +70,10 @@ def register_api():
     if existing:
         return jsonify(error="An account with this email address already exists."), 400
 
-    # Role assignment: first user or designated ADMIN_EMAIL is admin
-    admin_email = current_app.config.get("ADMIN_EMAIL", "").strip().lower()
-    is_first_user = db.count_users() == 0
-    role = "admin" if (is_first_user or (admin_email and data["email"] == admin_email)) else "user"
+    # Strict RBAC: Public registration ALWAYS creates standard user accounts.
+    # Automatic admin promotion (first user, admin email, or name) is strictly prevented.
+    # Admin accounts can only be created via CLI or by an authenticated admin.
+    role = "user"
 
     password_hash = hash_password(data["password"])
     user_id = db.create_user(
@@ -113,6 +121,27 @@ def current_user_api():
     return jsonify(user=db.user_to_dict(user))
 
 
+@bp.put("/auth/me")
+@login_required
+def update_current_user_api():
+    """Update authenticated user profile (strictly prevents privilege/role escalation)."""
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    updates = validate_profile_update(payload)
+    user = get_current_user()
+
+    if "full_name" in updates and updates["full_name"] != user["full_name"]:
+        db.update_user(user["id"], full_name=updates["full_name"])
+        session["user_name"] = updates["full_name"]
+
+    if "new_password" in updates:
+        if not verify_password(updates["current_password"], user["password_hash"]):
+            return jsonify(error="Current password does not match."), 400
+        db.update_user(user["id"], password_hash=hash_password(updates["new_password"]))
+
+    updated = db.get_user_by_id(user["id"])
+    return jsonify(user=db.user_to_dict(updated)), 200
+
+
 # ============================================================================
 # Admin Management API Endpoints (Admin Role Only)
 # ============================================================================
@@ -122,6 +151,33 @@ def current_user_api():
 def admin_list_users():
     """View all registered users and their transaction statistics."""
     return jsonify(users=db.list_users())
+
+
+@bp.post("/admin/users")
+@admin_required
+def admin_create_user():
+    """Create a new user or administrator account (Authorized Admins only)."""
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    data = validate_registration(payload)
+
+    existing = db.get_user_by_email(data["email"])
+    if existing:
+        return jsonify(error="An account with this email address already exists."), 400
+
+    # Authorized admin can specify role, defaults to 'user'
+    requested_role = (payload.get("role") or "user").strip().lower()
+    role = "admin" if requested_role == "admin" else "user"
+
+    password_hash = hash_password(data["password"])
+    user_id = db.create_user(
+        full_name=data["full_name"],
+        email=data["email"],
+        password_hash=password_hash,
+        role=role,
+        is_active=1,
+    )
+    new_user = db.get_user_by_id(user_id)
+    return jsonify(user=db.user_to_dict(new_user)), 201
 
 
 @bp.post("/admin/users/<int:user_id>/toggle-status")

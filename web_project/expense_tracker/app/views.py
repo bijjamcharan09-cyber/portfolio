@@ -181,9 +181,10 @@ def register():
                 if existing:
                     error = "An account with this email address already exists."
                 else:
-                    admin_email = current_app.config.get("ADMIN_EMAIL", "").strip().lower()
-                    is_first_user = db.count_users() == 0
-                    role = "admin" if (is_first_user or (admin_email and data["email"] == admin_email)) else "user"
+                    # Strict RBAC: Public registration always creates standard user accounts.
+                    # Automatic admin promotion (first user, admin email, or name) is strictly prevented.
+                    # Admin accounts can only be created via CLI or by an authenticated admin.
+                    role = "user"
 
                     password_hash = hash_password(data["password"])
                     user_id = db.create_user(

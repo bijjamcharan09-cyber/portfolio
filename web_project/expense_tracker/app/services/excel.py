@@ -20,7 +20,7 @@ from ..validators import CATEGORIES, ValidationError
 DANGEROUS_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "%")
 
 # Standardized column headers expected in Excel templates
-EXPECTED_COLUMNS = ["Date", "Title", "Category", "Amount", "Payment Method", "Description"]
+EXPECTED_COLUMNS = ["Date", "Title", "Transaction Type", "Category", "Amount", "Payment Method", "Description"]
 
 
 def sanitize_text_for_excel(value: str) -> str:
@@ -60,9 +60,19 @@ def parse_excel_date(val) -> str:
     raise ValueError(f"Invalid date format '{text}'. Expected YYYY-MM-DD")
 
 
-def match_category(raw_cat: str) -> tuple[str, str]:
+def match_category(raw_cat: str, explicit_type: str = None) -> tuple[str, str]:
     """Match category string case-insensitively and return (canonical_category, transaction_type)."""
     clean = clean_imported_text(raw_cat).strip().lower()
+    type_clean = clean_imported_text(explicit_type).strip().lower() if explicit_type else None
+
+    if type_clean in ("income", "expense"):
+        for cat in CATEGORIES[type_clean]:
+            if cat.lower() == clean:
+                return cat, type_clean
+        allowed = ", ".join(CATEGORIES[type_clean])
+        raise ValueError(f"Category '{raw_cat}' is not valid for transaction type '{type_clean.capitalize()}'. Allowed: {allowed}")
+
+    # Fallback when explicit type is not provided or not recognized
     for cat in CATEGORIES["expense"]:
         if cat.lower() == clean:
             return cat, "expense"
@@ -106,12 +116,12 @@ def export_expenses_to_excel(transactions: list[dict], title: str = "Expense Rep
     align_right = Alignment(horizontal="right", vertical="center")
 
     # Title block
-    ws.merge_cells("A1:F1")
+    ws.merge_cells("A1:G1")
     ws["A1"] = f"{title} - Expense Tracker"
     ws["A1"].font = font_title
     ws["A1"].alignment = align_left
 
-    ws.merge_cells("A2:F2")
+    ws.merge_cells("A2:G2")
     ws["A2"] = f"Generated on {date.today().strftime('%B %d, %Y')} | Currency: {base_currency}"
     ws["A2"].font = font_sub
     ws["A2"].alignment = align_left
@@ -150,6 +160,8 @@ def export_expenses_to_excel(transactions: list[dict], title: str = "Expense Rep
         # Format values with formula protection
         date_str = str(tx.get("date", ""))
         safe_title = sanitize_text_for_excel(title_text)
+        type_display = "Income" if t_type == "income" else "Expense"
+        safe_type = sanitize_text_for_excel(type_display)
         safe_cat = sanitize_text_for_excel(tx.get("category", ""))
         safe_pm = sanitize_text_for_excel(payment_method)
         safe_desc = sanitize_text_for_excel(desc_text)
@@ -162,23 +174,27 @@ def export_expenses_to_excel(transactions: list[dict], title: str = "Expense Rep
         c_title = ws.cell(row=row_num, column=2, value=safe_title)
         c_title.alignment = align_left
 
-        c_cat = ws.cell(row=row_num, column=3, value=safe_cat)
+        c_type = ws.cell(row=row_num, column=3, value=safe_type)
+        c_type.alignment = align_center
+        c_type.font = font_income if t_type == "income" else font_expense
+
+        c_cat = ws.cell(row=row_num, column=4, value=safe_cat)
         c_cat.alignment = align_left
 
-        c_amt = ws.cell(row=row_num, column=4, value=float(amount_val))
+        c_amt = ws.cell(row=row_num, column=5, value=float(amount_val))
         c_amt.number_format = "#,##0.00"
         c_amt.alignment = align_right
         c_amt.font = font_income if t_type == "income" else font_expense
 
-        c_pm = ws.cell(row=row_num, column=5, value=safe_pm)
+        c_pm = ws.cell(row=row_num, column=6, value=safe_pm)
         c_pm.alignment = align_center
 
-        c_desc = ws.cell(row=row_num, column=6, value=safe_desc)
+        c_desc = ws.cell(row=row_num, column=7, value=safe_desc)
         c_desc.alignment = align_left
 
-        for col_idx in range(1, 7):
+        for col_idx in range(1, 8):
             cell = ws.cell(row=row_num, column=col_idx)
-            if col_idx != 4:
+            if col_idx not in (3, 5):
                 cell.font = font_data
             cell.fill = row_fill
             cell.border = thin_border
@@ -198,29 +214,29 @@ def export_expenses_to_excel(transactions: list[dict], title: str = "Expense Rep
     ]
 
     for label, val, font_style in summary_items:
-        ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=3)
+        ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=4)
         lbl_cell = ws.cell(row=row_num, column=1, value=label)
         lbl_cell.font = font_total
         lbl_cell.alignment = align_right
         lbl_cell.fill = total_fill
 
-        val_cell = ws.cell(row=row_num, column=4, value=val)
+        val_cell = ws.cell(row=row_num, column=5, value=val)
         val_cell.font = font_style
         val_cell.alignment = align_right
         val_cell.number_format = "#,##0.00"
         val_cell.fill = total_fill
 
-        ws.merge_cells(start_row=row_num, start_column=5, end_row=row_num, end_column=6)
-        ws.cell(row=row_num, column=5).fill = total_fill
+        ws.merge_cells(start_row=row_num, start_column=6, end_row=row_num, end_column=7)
+        ws.cell(row=row_num, column=6).fill = total_fill
 
-        for c in range(1, 7):
+        for c in range(1, 8):
             ws.cell(row=row_num, column=c).border = summary_border
 
         ws.row_dimensions[row_num].height = 22
         row_num += 1
 
     # Adjust Column Widths
-    min_widths = [14, 25, 18, 16, 18, 28]
+    min_widths = [14, 25, 18, 18, 16, 18, 28]
     for col_idx, min_w in enumerate(min_widths, start=1):
         col_letter = get_column_letter(col_idx)
         max_len = max(
@@ -298,6 +314,8 @@ def import_expenses_from_excel(file_stream, max_rows: int = 1000) -> dict:
         row_vals = [clean_imported_text(ws.cell(row=row_idx, column=c).value).lower() for c in range(1, ws.max_column + 1)]
         matched = {}
         for c_idx, val in enumerate(row_vals, start=1):
+            if val in ("transaction type", "type"):
+                matched["Transaction Type"] = c_idx
             for expected in EXPECTED_COLUMNS:
                 if val == expected.lower() or expected.lower() in val:
                     matched[expected] = c_idx
@@ -310,7 +328,7 @@ def import_expenses_from_excel(file_stream, max_rows: int = 1000) -> dict:
 
     if header_row_idx is None:
         raise ValidationError(
-            "Could not find valid column headers. Expected columns: Date, Title, Category, Amount, Payment Method, Description."
+            "Could not find valid column headers. Expected columns: Date, Title, Transaction Type, Category, Amount, Payment Method, Description."
         )
 
     # Check for missing required columns
@@ -339,7 +357,14 @@ def import_expenses_from_excel(file_stream, max_rows: int = 1000) -> dict:
             row_errors.append(f"Date error: {e}")
             parsed_date = None
 
-        # 2. Category & Type
+        # 2. Transaction Type (optional in uploaded file for backwards compatibility)
+        type_raw = ws.cell(row=r_idx, column=col_map["Transaction Type"]).value if "Transaction Type" in col_map else None
+        clean_type = clean_imported_text(type_raw).strip().lower() if type_raw is not None else ""
+        if clean_type and clean_type not in ("income", "expense"):
+            row_errors.append(f"Invalid transaction type '{type_raw}'. Expected 'Income' or 'Expense'")
+            clean_type = None
+
+        # 3. Category & Type Resolution
         cat_raw = ws.cell(row=r_idx, column=col_map["Category"]).value
         canonical_cat = None
         tx_type = None
@@ -347,7 +372,7 @@ def import_expenses_from_excel(file_stream, max_rows: int = 1000) -> dict:
             row_errors.append("Category cannot be empty")
         else:
             try:
-                canonical_cat, tx_type = match_category(str(cat_raw))
+                canonical_cat, tx_type = match_category(str(cat_raw), explicit_type=clean_type)
             except Exception as e:
                 row_errors.append(str(e))
 
