@@ -40,6 +40,18 @@ from .validators import (
 views_bp = Blueprint("views", __name__)
 
 
+@views_bp.get("/health")
+@views_bp.get("/api/health")
+def health_check():
+    """Public unauthenticated health check endpoint for Railway and uptime monitors.
+    Returns HTTP 200 with minimal service status without leaking credentials, user data, or paths.
+    """
+    return {
+        "status": "healthy",
+        "service": "expense-tracker",
+    }, 200
+
+
 @views_bp.get("/")
 @views_bp.get("/api/index")
 @views_bp.get("/api/index.py")

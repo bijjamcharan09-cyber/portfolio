@@ -113,11 +113,22 @@ def _connect_turso(url: str, auth_token: str):
 
 
 def _connect_sqlite(db_path: str):
-    """Open a local SQLite database connection."""
+    """Open a local SQLite database connection with concurrency and durability pragmas."""
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
+
+    # Configure SQLite PRAGMAs for performance, concurrency, and integrity
+    try:
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA busy_timeout = 10000;")  # 10s wait for locked tables
+        if db_path != ":memory:":
+            conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+    except Exception as exc:
+        logger.warning("Could not set SQLite PRAGMA configuration: %s", exc)
+
     return conn
 
 
@@ -133,12 +144,13 @@ def get_db():
     # In testing mode or when explicitly set to sqlite, use SQLite
     if is_testing or mode == "sqlite":
         # Check 'DATABASE' first for test fixtures (e.g. tmp_path / "test.db")
-        # then fallback to SQLITE_DATABASE_PATH or default.
+        # then prioritize DATABASE_PATH (e.g. /data/expenses.db on Railway)
         if is_testing and current_app.config.get("DATABASE"):
             db_path = current_app.config.get("DATABASE")
         else:
             db_path = (
-                current_app.config.get("SQLITE_DATABASE_PATH")
+                current_app.config.get("DATABASE_PATH")
+                or current_app.config.get("SQLITE_DATABASE_PATH")
                 or current_app.config.get("DATABASE")
                 or "data/tracker.db"
             )

@@ -51,10 +51,17 @@ class Config:
         DATABASE_MODE = "sqlite"
 
     # SQLite settings (used when DATABASE_MODE == 'sqlite' or in tests)
-    sqlite_path = os.getenv("SQLITE_DATABASE_PATH") or os.getenv("DATABASE_PATH") or "data/tracker.db"
-    SQLITE_DATABASE_PATH = str(Path(sqlite_path) if Path(sqlite_path).is_absolute() else (BASE_DIR / sqlite_path))
+    # Prioritizes DATABASE_PATH for Railway persistent volume mounts (e.g. /data/expenses.db)
+    # while preserving SQLITE_DATABASE_PATH and local fallback for local development.
+    raw_sqlite_path = (
+        os.getenv("DATABASE_PATH", "").strip()
+        or os.getenv("SQLITE_DATABASE_PATH", "").strip()
+        or "data/tracker.db"
+    )
+    DATABASE_PATH = str(Path(raw_sqlite_path) if Path(raw_sqlite_path).is_absolute() else (BASE_DIR / raw_sqlite_path))
+    SQLITE_DATABASE_PATH = DATABASE_PATH
     # Keep DATABASE for backward compatibility with existing tests
-    DATABASE = SQLITE_DATABASE_PATH
+    DATABASE = DATABASE_PATH
 
     BASE_CURRENCY = os.getenv("BASE_CURRENCY", "INR(₹)").upper()
     EXCHANGE_API_URL = os.getenv("EXCHANGE_API_URL", "https://api.frankfurter.app/latest")
@@ -75,11 +82,23 @@ class Config:
         if is_prod:
             if secret in cls.INSECURE_SECRETS:
                 raise RuntimeError("Production requires a secure, non-default SECRET_KEY environment variable.")
-            if mode != "turso":
+
+            # Vercel serverless environment strictly forbids local SQLite
+            is_vercel = cfg.get("VERCEL") == "1" or os.getenv("VERCEL") == "1"
+            if is_vercel and mode != "turso":
                 raise RuntimeError(
                     "Production deployment on Vercel requires DATABASE_MODE='turso' and remote Turso database credentials. "
                     "Local SQLite cannot persist data across serverless executions."
                 )
+
+            # SQLite in production (e.g. Railway persistent volume mount)
+            if mode == "sqlite":
+                db_path = cfg.get("DATABASE_PATH") or cfg.get("SQLITE_DATABASE_PATH") or ""
+                if not db_path:
+                    raise RuntimeError(
+                        "Production deployment on Vercel requires DATABASE_MODE='turso' and remote Turso database credentials. "
+                        "For Railway deployment with SQLite, a persistent volume DATABASE_PATH (e.g. /data/expenses.db) must be configured."
+                    )
 
         if mode == "turso":
             url = cfg.get("TURSO_DATABASE_URL", "").strip()
