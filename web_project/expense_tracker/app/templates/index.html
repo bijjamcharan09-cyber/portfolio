@@ -4,6 +4,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1E293B">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
   <title>{% if is_guest %}Guest Demo - {% endif %}Expense Tracker</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -172,6 +174,13 @@
   </div>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('{{ url_for('static', filename='sw.js') }}').catch(()=>{});
+      });
+    }
+  </script>
 </body>
 
 </html>
