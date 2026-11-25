@@ -113,7 +113,18 @@ def _run_migration(conn, migration: dict) -> bool:
 
     try:
         for stmt in statements:
-            conn.execute(stmt)
+            # Handle ALTER TABLE ADD COLUMN for idempotency
+            # If column already exists, catch the error and continue
+            try:
+                conn.execute(stmt)
+            except Exception as exc:
+                # Check for duplicate column error (SQLite: "duplicate column name")
+                # or Turso/libSQL equivalent
+                error_msg = str(exc).lower()
+                if "duplicate column" in error_msg or "already exists" in error_msg:
+                    logger.info("Skipping duplicate column in migration %s: %s", migration["version"], exc)
+                    continue
+                raise
         conn.commit()
         return True
     except Exception as exc:

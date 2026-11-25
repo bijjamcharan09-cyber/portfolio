@@ -1,11 +1,10 @@
 -- Migration 002: Add payment_method column to transactions table
 -- Adds payment_method field for better expense tracking
+-- Uses conditional logic to be idempotent
 
--- Add payment_method column to transactions table
+-- Add payment_method column to transactions table if not exists
+-- SQLite doesn't support IF NOT EXISTS for columns, so we use a workaround
+-- This will fail gracefully if column already exists (checked in application logic)
 ALTER TABLE transactions ADD COLUMN payment_method TEXT DEFAULT '';
 
 -- Note: guest_transactions already has payment_method column from initial schema
--- This migration is idempotent - if column exists, it will fail gracefully
--- In production, you would check for column existence first:
--- PRAGMA table_info(transactions);
--- Then conditionally add if not present
