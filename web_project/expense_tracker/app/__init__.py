@@ -84,6 +84,50 @@ def create_app(test_config=None):
             mode = app.config.get("DATABASE_MODE", "sqlite")
             print(f"Database schema initialized successfully for mode: {mode}.")
 
+    # CLI command: migrate-db
+    @app.cli.command("migrate-db")
+    @click.option("--dry-run", is_flag=True, help="Show pending migrations without applying")
+    @click.option("--target", help="Run migrations up to this version (inclusive)")
+    def migrate_db_command(dry_run, target):
+        """Run pending database migrations."""
+        from scripts.run_migrations import run_migrations
+        result = run_migrations(
+            database_mode=app.config.get("DATABASE_MODE"),
+            database_path=app.config.get("DATABASE_PATH"),
+            turso_url=app.config.get("TURSO_DATABASE_URL"),
+            turso_token=app.config.get("TURSO_AUTH_TOKEN"),
+            dry_run=dry_run,
+            target_version=target
+        )
+        if result["success"]:
+            if dry_run:
+                print(f"[OK] Dry run: {len(result.get('pending', []))} pending migrations")
+            else:
+                print(f"[OK] {result.get('message', 'Migrations applied successfully')}")
+        else:
+            print(f"[ERROR] {result['error']}")
+            if "applied" in result:
+                print(f"  Migrations applied before failure: {result['applied']}")
+
+    # CLI command: migrate-status
+    @app.cli.command("migrate-status")
+    def migrate_status_command():
+        """Show migration status."""
+        from scripts.run_migrations import status
+        result = status(
+            database_mode=app.config.get("DATABASE_MODE"),
+            database_path=app.config.get("DATABASE_PATH"),
+            turso_url=app.config.get("TURSO_DATABASE_URL"),
+            turso_token=app.config.get("TURSO_AUTH_TOKEN")
+        )
+        if result["success"]:
+            print("Migration Status:")
+            for m in result["migrations"]:
+                status_icon = "[OK]" if m["status"] == "applied" else "[!]" if m["status"] == "rolled_back" else "[..]"
+                print(f"  {status_icon} {m['version']}: {m['name']} ({m['status']})")
+        else:
+            print(f"[ERROR] {result['error']}")
+
     # CLI command: create-admin (without hardcoded passwords)
     @app.cli.command("create-admin")
     @click.option("--name", prompt="Admin Full Name", help="Full name of administrator")
