@@ -70,6 +70,15 @@ class Config:
     MAX_CONTENT_LENGTH = 4 * 1024 * 1024  # 4 MB max body size for secure Excel uploads
     GUEST_SESSION_TIMEOUT = int(os.getenv("GUEST_SESSION_TIMEOUT", "1800"))  # 30 minutes
 
+    # Rate Limiting Configuration
+    # RATE_LIMIT_STORAGE_URL: Redis URL for distributed rate limiting (optional)
+    # If not set, uses in-memory storage (suitable for single-instance deployments only)
+    RATE_LIMIT_STORAGE_URL = os.getenv("RATE_LIMIT_STORAGE_URL", "").strip()
+    # Trusted proxy header for client IP detection behind reverse proxy (e.g., Railway, Vercel)
+    RATE_LIMIT_TRUSTED_PROXY = os.getenv("RATE_LIMIT_TRUSTED_PROXY", "").strip().lower() == "true"
+    # Enable/disable rate limiting entirely
+    RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() == "true"
+
     @classmethod
     def validate_production_config(cls, config_dict=None):
         """Validate critical production configuration.

@@ -7,12 +7,20 @@ from .auth import generate_csrf_token, get_current_user, hash_password, is_activ
 from .config import Config
 from .validators import ValidationError
 
+# Rate limiting
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
 
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.from_object(Config)
     if test_config:
         app.config.update(test_config)
+
+    # Disable rate limiting in test mode by default
+    if app.config.get("TESTING", False):
+        app.config["RATE_LIMIT_ENABLED"] = False
 
     # Validate production configuration if running in production or explicit Turso mode
     # (unless explicitly in testing mode)
@@ -30,6 +38,9 @@ def create_app(test_config=None):
     # Register Web Views blueprint
     from .views import views_bp
     app.register_blueprint(views_bp)
+
+    # Initialize rate limiter (after blueprints are registered)
+    _init_rate_limiter(app)
 
     # Global template context processor
     @app.context_processor
@@ -120,3 +131,71 @@ def create_app(test_config=None):
         return response
 
     return app
+
+
+def _init_rate_limiter(app):
+    """Initialize Flask-Limiter with appropriate storage backend and limits."""
+    if not app.config.get("RATE_LIMIT_ENABLED", True):
+        return
+
+    storage_url = app.config.get("RATE_LIMIT_STORAGE_URL", "")
+    trusted_proxy = app.config.get("RATE_LIMIT_TRUSTED_PROXY", False)
+
+    # Configure key function with proxy support
+    def get_client_ip():
+        if trusted_proxy:
+            # Trust X-Forwarded-For header only when behind known proxy
+            forwarded = request.headers.get("X-Forwarded-For", "")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+        return get_remote_address()
+
+    # Configure storage backend
+    if storage_url:
+        # Redis backend for multi-instance deployments
+        limiter = Limiter(
+            key_func=get_client_ip,
+            app=app,
+            storage_uri=storage_url,
+            default_limits=["200 per minute", "1000 per hour"],
+            strategy="fixed-window",
+        )
+    else:
+        # In-memory backend for development/single instance
+        limiter = Limiter(
+            key_func=get_client_ip,
+            app=app,
+            default_limits=["200 per minute", "1000 per hour"],
+            strategy="fixed-window",
+        )
+
+    # Apply specific limits to sensitive endpoints
+    limiter.limit("5 per minute")(app.view_functions.get("api.login_api"))
+    limiter.limit("3 per minute")(app.view_functions.get("api.register_api"))
+    limiter.limit("10 per minute")(app.view_functions.get("views.login"))
+    limiter.limit("5 per minute")(app.view_functions.get("views.register"))
+    limiter.limit("10 per minute")(app.view_functions.get("views.start_guest"))
+    limiter.limit("60 per minute")(app.view_functions.get("api.list_transactions"))
+    limiter.limit("60 per minute")(app.view_functions.get("api.guest_list_transactions"))
+    limiter.limit("10 per minute")(app.view_functions.get("api.import_user_excel"))
+    limiter.limit("10 per minute")(app.view_functions.get("api.guest_import_excel"))
+    limiter.limit("30 per minute")(app.view_functions.get("api.export_user_excel"))
+    limiter.limit("30 per minute")(app.view_functions.get("api.guest_export_excel"))
+    limiter.limit("30 per minute")(app.view_functions.get("api.download_excel_template"))
+    limiter.limit("30 per minute")(app.view_functions.get("api.guest_excel_template"))
+
+    # Custom 429 handler
+    @app.errorhandler(429)
+    def handle_rate_limit_exceeded(err):
+        retry_after = err.description if hasattr(err, 'description') else "60"
+        if request.path.startswith("/api/"):
+            return jsonify(
+                error="Rate limit exceeded. Please slow down your requests.",
+                retry_after=retry_after
+            ), 429, {"Retry-After": str(retry_after)}
+        return render_template(
+            "login.html",
+            error="Too many requests. Please wait a moment and try again."
+        ), 429, {"Retry-After": str(retry_after)}
+
+    return limiter
