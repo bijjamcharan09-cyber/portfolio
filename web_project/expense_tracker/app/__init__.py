@@ -1,6 +1,9 @@
 """Application factory: builds and configures the Flask app."""
 import click
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+import logging
+import sys
+import uuid
+from flask import Flask, jsonify, redirect, render_template, request, url_for, g
 
 from . import db
 from .auth import generate_csrf_token, get_current_user, hash_password, is_active_guest
@@ -11,12 +14,27 @@ from .validators import ValidationError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
+# Sentry (optional)
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
+
 
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.from_object(Config)
     if test_config:
         app.config.update(test_config)
+
+    # Initialize structured logging
+    _init_logging(app)
+
+    # Initialize Sentry (optional, non-blocking)
+    _init_sentry(app)
 
     # Disable rate limiting in test mode by default
     if app.config.get("TESTING", False):
@@ -41,6 +59,11 @@ def create_app(test_config=None):
 
     # Initialize rate limiter (after blueprints are registered)
     _init_rate_limiter(app)
+
+    # Add request ID middleware for tracing
+    @app.before_request
+    def inject_request_id():
+        g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
 
     # Global template context processor
     @app.context_processor
@@ -91,12 +114,14 @@ def create_app(test_config=None):
 
     @app.errorhandler(ValidationError)
     def handle_validation_error(err):
+        app.logger.warning("Validation error: %s", err, extra={"path": request.path, "method": request.method})
         if request.path.startswith("/api/"):
             return jsonify(error=str(err)), 400
         return render_template("login.html", error=str(err)), 400
 
     @app.errorhandler(403)
     def handle_forbidden(err):
+        app.logger.warning("Forbidden access: %s", err, extra={"path": request.path, "method": request.method, "user_id": getattr(g, "current_user", {}).get("id") if hasattr(g, "current_user") else None})
         if request.path.startswith("/api/"):
             return jsonify(error="Access denied. Insufficient permissions."), 403
         return render_template("login.html", error="Access forbidden: You do not have permission to view this resource."), 403
@@ -111,6 +136,19 @@ def create_app(test_config=None):
         token = app.config.get("TURSO_AUTH_TOKEN", "")
         if token and token in msg:
             msg = msg.replace(token, "[REDACTED]")
+
+        # Log the full error with context
+        app.logger.error(
+            "Unhandled exception: %s",
+            msg,
+            extra={
+                "path": request.path,
+                "method": request.method,
+                "user_id": getattr(g, "current_user", {}).get("id") if hasattr(g, "current_user") else None,
+                "request_id": getattr(g, "request_id", None),
+            },
+            exc_info=True
+        )
 
         if "turso" in msg.lower() or "database" in msg.lower() or "connect" in msg.lower():
             if request.path.startswith("/api/"):
@@ -199,3 +237,127 @@ def _init_rate_limiter(app):
         ), 429, {"Retry-After": str(retry_after)}
 
     return limiter
+
+
+def _init_logging(app):
+    """Configure structured logging with request context."""
+    log_level = getattr(logging, app.config.get("LOG_LEVEL", "INFO"), logging.INFO)
+    log_format = app.config.get("LOG_FORMAT", "json")
+
+    # Clear existing handlers
+    logging.getLogger().handlers.clear()
+
+    # Create handler
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(log_level)
+
+    if log_format == "json":
+        # JSON formatter for structured logging
+        import json
+        from datetime import datetime, timezone
+
+        class JsonFormatter(logging.Formatter):
+            def format(self, record):
+                log_obj = {
+                    "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": record.getMessage(),
+                }
+                # Add request context if available
+                if hasattr(g, "request_id"):
+                    log_obj["request_id"] = g.request_id
+                if hasattr(g, "current_user") and g.current_user:
+                    log_obj["user_id"] = g.current_user.get("id")
+                # Add extra fields from record
+                for key, value in record.__dict__.items():
+                    if key not in ["name", "msg", "args", "levelname", "levelno", "pathname",
+                                   "filename", "module", "lineno", "funcName", "created",
+                                   "msecs", "relativeCreated", "thread", "threadName",
+                                   "processName", "process", "message", "exc_info", "exc_text",
+                                   "stack_info", "request_id", "user_id"]:
+                        log_obj[key] = value
+                return json.dumps(log_obj, default=str)
+
+        handler.setFormatter(JsonFormatter())
+    else:
+        # Text formatter for development
+        formatter = logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s [request_id=%(request_id)s]"
+        )
+        handler.setFormatter(formatter)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    root_logger.addHandler(handler)
+
+    # Set specific loggers
+    logging.getLogger("werkzeug").setLevel(logging.WARNING if app.config.get("IS_PRODUCTION") else logging.INFO)
+    logging.getLogger("flask_limiter").setLevel(logging.WARNING)
+
+    # Add request_id filter for non-JSON logs
+    class RequestIdFilter(logging.Filter):
+        def filter(self, record):
+            if not hasattr(record, "request_id"):
+                record.request_id = getattr(g, "request_id", "-")
+            return True
+
+    handler.addFilter(RequestIdFilter())
+
+    return handler
+
+
+def _init_sentry(app):
+    """Initialize Sentry SDK if configured (non-blocking)."""
+    dsn = app.config.get("SENTRY_DSN", "").strip()
+    if not dsn or not SENTRY_AVAILABLE:
+        return
+
+    try:
+        sentry_logging = LoggingIntegration(
+            level=logging.INFO,
+            event_level=logging.ERROR
+        )
+        sentry_sdk.init(
+            dsn=dsn,
+            integrations=[FlaskIntegration(), sentry_logging],
+            traces_sample_rate=app.config.get("SENTRY_TRACES_SAMPLE_RATE", 0.1),
+            profiles_sample_rate=app.config.get("SENTRY_PROFILES_SAMPLE_RATE", 0.1),
+            environment=app.config.get("FLASK_ENV", "development"),
+            # Scrub sensitive data
+            before_send=_sentry_before_send,
+        )
+        app.logger.info("Sentry initialized successfully")
+    except Exception as exc:
+        # Never let Sentry init failure break the app
+        app.logger.warning("Sentry initialization failed: %s", exc)
+
+
+def _sentry_before_send(event, hint):
+    """Scrub sensitive data from Sentry events."""
+    # Remove auth tokens, passwords, session cookies
+    if "request" in event:
+        headers = event["request"].get("headers", {})
+        sensitive_headers = ["authorization", "cookie", "x-csrf-token", "x-forwarded-for"]
+        for h in sensitive_headers:
+            if h in headers:
+                headers[h] = "[REDACTED]"
+
+        # Scrub URL query params that might contain tokens
+        url = event["request"].get("url", "")
+        if "?" in url:
+            base, query = url.split("?", 1)
+            scrubbed_params = []
+            for param in query.split("&"):
+                if "=" in param:
+                    key, val = param.split("=", 1)
+                    if any(s in key.lower() for s in ["token", "password", "secret", "key", "auth"]):
+                        scrubbed_params.append(f"{key}=[REDACTED]")
+                    else:
+                        scrubbed_params.append(param)
+                else:
+                    scrubbed_params.append(param)
+            event["request"]["url"] = base + "?" + "&".join(scrubbed_params)
+
+    return event

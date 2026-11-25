@@ -52,6 +52,28 @@ def health_check():
     }, 200
 
 
+@views_bp.get("/health/ready")
+def readiness_check():
+    """Readiness probe - checks database connectivity and critical dependencies.
+    Returns 200 if ready to serve traffic, 503 if not ready.
+    """
+    try:
+        conn = db.get_db()
+        conn.execute("SELECT 1").fetchone()
+        return {
+            "status": "ready",
+            "service": "expense-tracker",
+            "database": "connected",
+        }, 200
+    except Exception as exc:
+        current_app.logger.error("Readiness check failed: %s", exc)
+        return {
+            "status": "not_ready",
+            "service": "expense-tracker",
+            "database": "disconnected",
+        }, 503
+
+
 @views_bp.get("/")
 @views_bp.get("/api/index")
 @views_bp.get("/api/index.py")

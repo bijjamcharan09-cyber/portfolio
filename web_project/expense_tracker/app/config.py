@@ -79,6 +79,16 @@ class Config:
     # Enable/disable rate limiting entirely
     RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() == "true"
 
+    # Logging Configuration
+    # LOG_LEVEL: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+    # LOG_FORMAT: 'json' for structured logging, 'text' for human-readable
+    LOG_FORMAT = os.getenv("LOG_FORMAT", "json").strip().lower()
+    # Sentry Configuration (optional)
+    SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+    SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))
+    SENTRY_PROFILES_SAMPLE_RATE = float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1"))
+
     @classmethod
     def validate_production_config(cls, config_dict=None):
         """Validate critical production configuration.
