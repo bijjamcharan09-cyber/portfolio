@@ -441,18 +441,55 @@ def get_transaction(tx_id, user_id=None):
     return get_db().execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
 
 
-def list_transactions(start, end, user_id=None):
-    """List up to 500 transactions within the specified date range, isolating by user_id."""
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+
+
+def list_transactions(start, end, user_id=None, page=1, per_page=None):
+    """List transactions within the specified date range, isolating by user_id, with pagination."""
+    if per_page is None:
+        per_page = DEFAULT_PAGE_SIZE
+    per_page = min(max(1, per_page), MAX_PAGE_SIZE)
+    page = max(1, page)
+    offset = (page - 1) * per_page
+
     s, e = start.isoformat(), end.isoformat()
+    conn = get_db()
+
     if user_id is not None:
-        return get_db().execute(
-            "SELECT * FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC, id DESC LIMIT 500",
+        # Count total records for pagination metadata
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ?",
             (user_id, s, e),
+        ).fetchone()
+        total = count_row[0] if count_row else 0
+
+        rows = conn.execute(
+            "SELECT * FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            (user_id, s, e, per_page, offset),
         ).fetchall()
-    return get_db().execute(
-        "SELECT * FROM transactions WHERE date BETWEEN ? AND ? ORDER BY date DESC, id DESC LIMIT 500",
-        (s, e),
-    ).fetchall()
+    else:
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE date BETWEEN ? AND ?", (s, e)
+        ).fetchone()
+        total = count_row[0] if count_row else 0
+
+        rows = conn.execute(
+            "SELECT * FROM transactions WHERE date BETWEEN ? AND ? ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            (s, e, per_page, offset),
+        ).fetchall()
+
+    return {
+        "transactions": rows,
+        "pagination": {
+            "current_page": page,
+            "per_page": per_page,
+            "total_records": total,
+            "total_pages": (total + per_page - 1) // per_page,
+            "has_next": page * per_page < total,
+            "has_previous": page > 1,
+        },
+    }
 
 
 def update_transaction(tx_id, t, user_id=None) -> bool:
@@ -522,21 +559,54 @@ def get_guest_transaction(guest_id: str, tx_id: int):
     ).fetchone()
 
 
-def list_guest_transactions(guest_id: str, start=None, end=None):
-    """List transactions for a guest session within optional date bounds."""
+def list_guest_transactions(guest_id: str, start=None, end=None, page=1, per_page=None):
+    """List transactions for a guest session within optional date bounds, with pagination."""
+    if per_page is None:
+        per_page = DEFAULT_PAGE_SIZE
+    per_page = min(max(1, per_page), MAX_PAGE_SIZE)
+    page = max(1, page)
+    offset = (page - 1) * per_page
+
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    conn = get_db()
+
     if start and end:
         s, e = start.isoformat(), end.isoformat()
-        return get_db().execute(
-            "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? "
-            "ORDER BY date DESC, id DESC LIMIT 500",
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ?",
             (guest_id, now_iso, s, e),
+        ).fetchone()
+        total = count_row[0] if count_row else 0
+
+        rows = conn.execute(
+            "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? "
+            "ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            (guest_id, now_iso, s, e, per_page, offset),
         ).fetchall()
-    return get_db().execute(
-        "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? "
-        "ORDER BY date DESC, id DESC LIMIT 500",
-        (guest_id, now_iso),
-    ).fetchall()
+    else:
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM guest_transactions WHERE guest_id = ? AND expires_at > ?",
+            (guest_id, now_iso),
+        ).fetchone()
+        total = count_row[0] if count_row else 0
+
+        rows = conn.execute(
+            "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? "
+            "ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            (guest_id, now_iso, per_page, offset),
+        ).fetchall()
+
+    return {
+        "transactions": rows,
+        "pagination": {
+            "current_page": page,
+            "per_page": per_page,
+            "total_records": total,
+            "total_pages": (total + per_page - 1) // per_page,
+            "has_next": page * per_page < total,
+            "has_previous": page > 1,
+        },
+    }
 
 
 def update_guest_transaction(guest_id: str, tx_id: int, t: dict) -> bool:

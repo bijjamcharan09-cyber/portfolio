@@ -243,10 +243,17 @@ def categories():
 @bp.get("/transactions")
 @login_required
 def list_transactions():
-    """List transactions for the authenticated user only."""
+    """List transactions for the authenticated user only with pagination."""
     start, end = _range()
     user_id = session.get("user_id")
-    return jsonify([db.row_to_dict(r) for r in db.list_transactions(start, end, user_id=user_id)])
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", type=int)
+
+    result = db.list_transactions(start, end, user_id=user_id, page=page, per_page=per_page)
+    return jsonify(
+        transactions=[db.row_to_dict(r) for r in result["transactions"]],
+        pagination=result["pagination"],
+    )
 
 
 @bp.post("/transactions")
@@ -431,11 +438,17 @@ def guest_categories():
 @bp.get("/guest/transactions")
 @guest_required
 def guest_list_transactions():
-    """List transactions for the active guest session."""
+    """List transactions for the active guest session with pagination."""
     start, end = _range()
     guest_id = get_current_guest_id()
-    rows = db.list_guest_transactions(guest_id, start, end)
-    return jsonify([db.row_to_dict(r) for r in rows])
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", type=int)
+
+    result = db.list_guest_transactions(guest_id, start, end, page=page, per_page=per_page)
+    return jsonify(
+        transactions=[db.row_to_dict(r) for r in result["transactions"]],
+        pagination=result["pagination"],
+    )
 
 
 @bp.post("/guest/transactions")
@@ -543,11 +556,11 @@ def guest_export_excel():
     guest_id = get_current_guest_id()
     if "period" in request.args:
         start, end = _range()
-        raw_rows = db.list_guest_transactions(guest_id, start, end)
+        result = db.list_guest_transactions(guest_id, start, end)
     else:
-        raw_rows = db.list_guest_transactions(guest_id)
+        result = db.list_guest_transactions(guest_id)
 
-    txs = [db.row_to_dict(r) for r in raw_rows]
+    txs = [db.row_to_dict(r) for r in result["transactions"]]
     buf = export_expenses_to_excel(
         txs,
         title="Guest Demo Expense Report",

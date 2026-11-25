@@ -12,8 +12,16 @@ def add(client, **overrides):
 
 def test_create_and_list(client):
     assert add(client).status_code == 201
-    rows = client.get("/api/transactions?period=month&date=2026-09-15").get_json()
+    resp = client.get("/api/transactions?period=month&date=2026-09-15").get_json()
+    rows = resp["transactions"]
     assert len(rows) == 1 and rows[0]["amount"] == 12.5
+    # Verify pagination metadata
+    assert resp["pagination"]["current_page"] == 1
+    assert resp["pagination"]["per_page"] == 20
+    assert resp["pagination"]["total_records"] == 1
+    assert resp["pagination"]["total_pages"] == 1
+    assert resp["pagination"]["has_next"] is False
+    assert resp["pagination"]["has_previous"] is False
 
 
 def test_rejects_bad_input(client):

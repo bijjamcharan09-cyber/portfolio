@@ -33,7 +33,8 @@ def test_guest_mode_start_and_sample_data(unauth_client, app_instance):
 
     # Verify sample records were seeded into guest_transactions
     with app_instance.app_context():
-        rows = db.list_guest_transactions(guest_id)
+        result = db.list_guest_transactions(guest_id)
+        rows = result["transactions"]
         assert len(rows) >= 6
         categories = [r["category"] for r in rows]
         assert "Salary" in categories
@@ -53,9 +54,13 @@ def test_guest_api_transactions_and_reports(unauth_client):
     # List guest transactions
     res_list = unauth_client.get(f"/api/guest/transactions?period=month&date={today_str}")
     assert res_list.status_code == 200
-    items = res_list.get_json()
+    resp = res_list.get_json()
+    items = resp["transactions"]
     assert isinstance(items, list)
     assert len(items) > 0
+    # Verify pagination metadata
+    assert resp["pagination"]["current_page"] == 1
+    assert resp["pagination"]["per_page"] == 20
 
     # Summary
     res_sum = unauth_client.get(f"/api/guest/reports/summary?period=month&date={today_str}")
@@ -157,7 +162,8 @@ def test_guest_inactivity_timeout_expiration(unauth_client, app_instance):
 
     # Verify guest data was cleaned up
     with app_instance.app_context():
-        rows = db.list_guest_transactions(guest_id)
+        result = db.list_guest_transactions(guest_id)
+        rows = result["transactions"]
         assert len(rows) == 0
 
 
@@ -197,5 +203,6 @@ def test_guest_cannot_access_registered_user_api(unauth_client, client):
     # Guest API returns only guest demo items, never the registered user's note
     res_guest = unauth_client.get(f"/api/guest/transactions?period=month&date={date.today().strftime('%Y-%m-%d')}")
     assert res_guest.status_code == 200
-    notes = [item["note"] for item in res_guest.get_json()]
+    resp = res_guest.get_json()
+    notes = [item["note"] for item in resp["transactions"]]
     assert "Private Registered User Purchase" not in notes

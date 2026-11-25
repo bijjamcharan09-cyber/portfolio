@@ -361,13 +361,15 @@ def test_multi_user_data_isolation_and_idor_protection(app_instance):
     tx_b_id = tx_b["id"]
 
     # User A lists transactions -> should only see Alpha lunch
-    items_a = client_a.get("/api/transactions?period=month&date=2026-10-15").get_json()
+    resp_a = client_a.get("/api/transactions?period=month&date=2026-10-15").get_json()
+    items_a = resp_a["transactions"]
     assert len(items_a) == 1
     assert items_a[0]["id"] == tx_a_id
     assert items_a[0]["amount"] == 55.00
 
     # User B lists transactions -> should only see Beta salary
-    items_b = client_b.get("/api/transactions?period=month&date=2026-10-15").get_json()
+    resp_b = client_b.get("/api/transactions?period=month&date=2026-10-15").get_json()
+    items_b = resp_b["transactions"]
     assert len(items_b) == 1
     assert items_b[0]["id"] == tx_b_id
     assert items_b[0]["amount"] == 2000.00

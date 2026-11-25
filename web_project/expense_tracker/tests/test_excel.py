@@ -242,7 +242,7 @@ def test_user_excel_import_with_transaction_type(client, app_instance):
 
     # Verify transactions in user's list have correct type
     res_list = client.get(f"/api/transactions?period=month&date={today_str}")
-    items = res_list.get_json()
+    items = res_list.get_json()["transactions"]
 
     retainer = next(i for i in items if "Client Retainer" in i["note"])
     assert retainer["type"] == "income"
@@ -270,7 +270,7 @@ def test_user_excel_import_legacy_template(client):
     assert res.get_json()["success_count"] == 2
 
     res_list = client.get(f"/api/transactions?period=month&date={today_str}")
-    items = res_list.get_json()
+    items = res_list.get_json()["transactions"]
     legacy_dinner = next(i for i in items if "Legacy Dinner" in i["note"])
     assert legacy_dinner["type"] == "expense"
     legacy_consult = next(i for i in items if "Legacy Consulting" in i["note"])
@@ -329,7 +329,7 @@ def test_import_formula_injection_defense(client):
 
     # Verify that stored note stripped the leading dangerous formula indicator
     res_list = client.get(f"/api/transactions?period=month&date={today_str}")
-    items = res_list.get_json()
+    items = res_list.get_json()["transactions"]
     imported_note = items[0]["note"]
     assert not imported_note.startswith("=")
     assert not imported_note.startswith("+")
@@ -372,7 +372,8 @@ def test_guest_excel_export_and_import(unauth_client, app_instance):
 
     # Verify it shows up in guest transactions
     res_guest_list = unauth_client.get(f"/api/guest/transactions?period=month&date={today_str}")
-    notes = [tx["note"] for tx in res_guest_list.get_json()]
+    resp = res_guest_list.get_json()
+    notes = [tx["note"] for tx in resp["transactions"]]
     assert any("Guest Imported Item" in n for n in notes)
 
     # Verify it was NOT written into registered user transactions

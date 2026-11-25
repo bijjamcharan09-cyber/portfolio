@@ -1,7 +1,8 @@
 const $ = (sel) => document.querySelector(sel);
-const state = { period: "month", categories: {}, editingId: null };
+const state = { period: "month", categories: {}, editingId: null, page: 1, hasNext: false, hasPrev: false };
 const isGuest = document.body.dataset.guest === "true";
 const apiBase = isGuest ? "/api/guest" : "/api";
+const PER_PAGE = 20;
 
 const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -21,7 +22,7 @@ async function api(path, options = {}) {
 function say(text) { $("#message").textContent = text; }
 
 function query() {
-  const q = new URLSearchParams({ period: state.period, date: $("#anchor").value });
+  const q = new URLSearchParams({ period: state.period, date: $("#anchor").value, page: state.page, per_page: PER_PAGE });
   if (state.period === "days") q.set("days", $("#days").value);
   return q.toString();
 }
@@ -116,17 +117,53 @@ function renderRows(items) {
   }
 }
 
+function renderPagination(pagination) {
+  const container = $("#pagination");
+  const prevBtn = $("#btn-prev-page");
+  const nextBtn = $("#btn-next-page");
+  const pageInfo = $("#page-info");
+
+  if (!container || !prevBtn || !nextBtn || !pageInfo) return;
+
+  const currentPage = pagination.current_page || 1;
+  const totalPages = pagination.total_pages || 1;
+  const hasNext = pagination.has_next || false;
+  const hasPrev = pagination.has_previous || false;
+
+  if (totalPages <= 1) {
+    container.hidden = true;
+    return;
+  }
+
+  container.hidden = false;
+  pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+  prevBtn.disabled = !hasPrev;
+  nextBtn.disabled = !hasNext;
+}
+
 async function refresh() {
   try {
     const q = query();
-    const [summary, items] = await Promise.all([api("/reports/summary?" + q), api("/transactions?" + q)]);
-    if (!summary || !items) return;
+    const [summary, resp] = await Promise.all([
+      api("/reports/summary?" + q),
+      api("/transactions?" + q)
+    ]);
+    if (!summary || !resp) return;
+
+    const items = resp.transactions || [];
+    const pagination = resp.pagination || {};
+
+    state.page = pagination.current_page || 1;
+    state.hasNext = pagination.has_next || false;
+    state.hasPrev = pagination.has_previous || false;
+
     $("#income").textContent = money(summary.income);
     $("#expense").textContent = money(summary.expense);
     $("#balance").textContent = money(summary.balance);
     $("#chart").src = apiBase + "/reports/chart.png?" + q + "&_=" + Date.now();
     $("#converted").textContent = "";
     renderRows(items);
+    renderPagination(pagination);
   } catch (err) { say(err.message); }
 }
 
@@ -175,8 +212,22 @@ $("#tabs").addEventListener("click", (e) => {
 });
 
 document.querySelectorAll("input[name=type]").forEach((r) => r.addEventListener("change", fillCategories));
-$("#anchor").addEventListener("change", refresh);
-$("#days").addEventListener("change", refresh);
+$("#anchor").addEventListener("change", () => { state.page = 1; refresh(); });
+$("#days").addEventListener("change", () => { state.page = 1; refresh(); });
+
+$("#btn-prev-page")?.addEventListener("click", () => {
+  if (state.hasPrev) {
+    state.page -= 1;
+    refresh();
+  }
+});
+
+$("#btn-next-page")?.addEventListener("click", () => {
+  if (state.hasNext) {
+    state.page += 1;
+    refresh();
+  }
+});
 
 // ============================================================================
 // Excel Export & Import Handlers
