@@ -60,6 +60,20 @@ SCHEMA_STATEMENTS = [
 )""",
     "CREATE INDEX IF NOT EXISTS idx_guest_tx_guest ON guest_transactions(guest_id)",
     "CREATE INDEX IF NOT EXISTS idx_guest_tx_expires ON guest_transactions(expires_at)",
+    """CREATE TABLE IF NOT EXISTS audit_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER,
+    action        TEXT    NOT NULL,
+    entity_type   TEXT,
+    entity_id     TEXT,
+    timestamp     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    request_id    TEXT,
+    metadata_json TEXT
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id)",
 ]
 
 # Backwards compatible full SCHEMA string
@@ -680,4 +694,88 @@ def seed_guest_sample_data(guest_id: str, expires_at: str):
 
     for rec in sample_records:
         add_guest_transaction(guest_id, rec, expires_at)
+
+
+# ============================================================================
+# Audit Logging
+# ============================================================================
+
+def audit_log(action: str, entity_type: str = None, entity_id: str = None, user_id: int = None, request_id: str = None, metadata: dict = None) -> bool:
+    """Record an audit log entry.
+
+    Args:
+        action: Action performed (e.g., 'login', 'logout', 'transaction_create', 'transaction_update', 'transaction_delete', 'excel_import', 'excel_export', 'admin_user_create', 'admin_user_delete', 'admin_user_toggle', 'password_change', 'profile_update')
+        entity_type: Type of entity affected ('user', 'transaction', 'guest_transaction', 'excel')
+        entity_id: ID of the entity affected
+        user_id: ID of the user performing the action (None for guest/anonymous)
+        request_id: Request ID for tracing
+        metadata: Additional non-sensitive metadata (JSON-serializable dict)
+
+    Returns:
+        True if logged successfully
+    """
+    import json
+    conn = get_db()
+    try:
+        meta_json = json.dumps(metadata) if metadata else None
+        conn.execute(
+            "INSERT INTO audit_log (user_id, action, entity_type, entity_id, request_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, action, entity_type, str(entity_id) if entity_id else None, request_id, meta_json),
+        )
+        conn.commit()
+        return True
+    except Exception as exc:
+        # Never let audit failures break the main operation
+        logger.warning("Audit log write failed: %s", exc)
+        return False
+
+
+def get_audit_logs(user_id: int = None, action: str = None, entity_type: str = None, limit: int = 100, offset: int = 0):
+    """Retrieve audit logs with optional filters. Admin only."""
+    conn = get_db()
+    conditions = []
+    params = []
+
+    if user_id is not None:
+        conditions.append("user_id = ?")
+        params.append(user_id)
+    if action:
+        conditions.append("action = ?")
+        params.append(action)
+    if entity_type:
+        conditions.append("entity_type = ?")
+        params.append(entity_type)
+
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+    params.extend([limit, offset])
+    return conn.execute(
+        f"SELECT * FROM audit_log {where_clause} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+        params,
+    ).fetchall()
+
+
+def count_audit_logs(user_id: int = None, action: str = None, entity_type: str = None) -> int:
+    """Count audit logs with optional filters."""
+    conn = get_db()
+    conditions = []
+    params = []
+
+    if user_id is not None:
+        conditions.append("user_id = ?")
+        params.append(user_id)
+    if action:
+        conditions.append("action = ?")
+        params.append(action)
+    if entity_type:
+        conditions.append("entity_type = ?")
+        params.append(entity_type)
+
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+    row = conn.execute(
+        f"SELECT COUNT(*) FROM audit_log {where_clause}",
+        params,
+    ).fetchone()
+    return row[0] if row else 0
 

@@ -32,10 +32,32 @@ def login_user(user: dict):
     session["user_email"] = user["email"]
     session["user_role"] = user["role"]
     g.current_user = user
+    # Audit log: successful login
+    try:
+        db.audit_log(
+            action="login",
+            entity_type="user",
+            entity_id=str(user["id"]),
+            user_id=user["id"],
+            metadata={"email": user["email"]}
+        )
+    except Exception:
+        pass
 
 
 def logout_user():
     """Clear the session completely upon logout."""
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            db.audit_log(
+                action="logout",
+                entity_type="user",
+                entity_id=str(user_id),
+                user_id=user_id
+            )
+        except Exception:
+            pass
     session.clear()
     g.current_user = None
 

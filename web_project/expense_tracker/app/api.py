@@ -84,6 +84,15 @@ def register_api():
         is_active=1,
     )
 
+    # Audit log: user registration
+    db.audit_log(
+        action="user_register",
+        entity_type="user",
+        entity_id=str(user_id),
+        user_id=user_id,
+        metadata={"email": data["email"], "role": role}
+    )
+
     new_user = db.get_user_by_id(user_id)
     login_user(new_user)
     return jsonify(user=db.user_to_dict(new_user)), 201
@@ -97,9 +106,32 @@ def login_api():
 
     user = db.get_user_by_email(data["email"])
     if not user or not verify_password(data["password"], user["password_hash"]):
+        # Audit log: failed login
+        if user:
+            db.audit_log(
+                action="login_failed",
+                entity_type="user",
+                entity_id=str(user["id"]),
+                user_id=user["id"],
+                metadata={"reason": "invalid_password"}
+            )
+        else:
+            db.audit_log(
+                action="login_failed",
+                entity_type="user",
+                metadata={"email": data["email"], "reason": "user_not_found"}
+            )
         return jsonify(error="Invalid email or password."), 401
 
     if not user["is_active"]:
+        # Audit log: failed login - deactivated account
+        db.audit_log(
+            action="login_failed",
+            entity_type="user",
+            entity_id=str(user["id"]),
+            user_id=user["id"],
+            metadata={"reason": "account_deactivated"}
+        )
         return jsonify(error="Account is deactivated. Please contact an administrator."), 403
 
     login_user(user)
@@ -130,13 +162,29 @@ def update_current_user_api():
     user = get_current_user()
 
     if "full_name" in updates and updates["full_name"] != user["full_name"]:
+        old_name = user["full_name"]
         db.update_user(user["id"], full_name=updates["full_name"])
         session["user_name"] = updates["full_name"]
+        # Audit log: profile update
+        db.audit_log(
+            action="profile_update",
+            entity_type="user",
+            entity_id=str(user["id"]),
+            user_id=user["id"],
+            metadata={"field": "full_name", "old_value": old_name, "new_value": updates["full_name"]}
+        )
 
     if "new_password" in updates:
         if not verify_password(updates["current_password"], user["password_hash"]):
             return jsonify(error="Current password does not match."), 400
         db.update_user(user["id"], password_hash=hash_password(updates["new_password"]))
+        # Audit log: password change
+        db.audit_log(
+            action="password_change",
+            entity_type="user",
+            entity_id=str(user["id"]),
+            user_id=user["id"]
+        )
 
     updated = db.get_user_by_id(user["id"])
     return jsonify(user=db.user_to_dict(updated)), 200
@@ -169,12 +217,21 @@ def admin_create_user():
     role = "admin" if requested_role == "admin" else "user"
 
     password_hash = hash_password(data["password"])
+    admin_user_id = session.get("user_id")
     user_id = db.create_user(
         full_name=data["full_name"],
         email=data["email"],
         password_hash=password_hash,
         role=role,
         is_active=1,
+    )
+    # Audit log: admin user create
+    db.audit_log(
+        action="admin_user_create",
+        entity_type="user",
+        entity_id=str(user_id),
+        user_id=admin_user_id,
+        metadata={"target_email": data["email"], "target_role": role}
     )
     new_user = db.get_user_by_id(user_id)
     return jsonify(user=db.user_to_dict(new_user)), 201
@@ -184,7 +241,8 @@ def admin_create_user():
 @admin_required
 def admin_toggle_user_status(user_id):
     """Activate or deactivate a user account with safety checks."""
-    if user_id == session.get("user_id"):
+    admin_user_id = session.get("user_id")
+    if user_id == admin_user_id:
         return jsonify(error="You cannot deactivate your own administrative account."), 400
 
     target = db.get_user_by_id(user_id)
@@ -199,6 +257,14 @@ def admin_toggle_user_status(user_id):
 
     new_status = 0 if target["is_active"] else 1
     db.update_user(user_id, is_active=new_status)
+    # Audit log: admin user toggle
+    db.audit_log(
+        action="admin_user_toggle",
+        entity_type="user",
+        entity_id=str(user_id),
+        user_id=admin_user_id,
+        metadata={"target_email": target["email"], "new_status": "active" if new_status else "inactive"}
+    )
     updated = db.get_user_by_id(user_id)
     return jsonify(user=db.user_to_dict(updated))
 
@@ -207,7 +273,8 @@ def admin_toggle_user_status(user_id):
 @admin_required
 def admin_delete_user(user_id):
     """Delete a user account with safety checks (cannot delete self or sole admin)."""
-    if user_id == session.get("user_id"):
+    admin_user_id = session.get("user_id")
+    if user_id == admin_user_id:
         return jsonify(error="You cannot delete your own administrative account."), 400
 
     target = db.get_user_by_id(user_id)
@@ -219,7 +286,18 @@ def admin_delete_user(user_id):
         if len(admins) <= 1:
             return jsonify(error="Cannot delete the only administrator account."), 400
 
+    target_email = target["email"]
+    target_role = target["role"]
     db.delete_user(user_id)
+
+    # Audit log: admin user delete
+    db.audit_log(
+        action="admin_user_delete",
+        entity_type="user",
+        entity_id=str(user_id),
+        user_id=admin_user_id,
+        metadata={"target_email": target_email, "target_role": target_role}
+    )
     return jsonify(message="User deleted successfully."), 200
 
 
@@ -228,6 +306,57 @@ def admin_delete_user(user_id):
 def admin_platform_stats():
     """View application-wide statistics."""
     return jsonify(db.get_platform_stats())
+
+
+# ============================================================================
+# Audit Log Endpoints (Admin Only)
+# ============================================================================
+
+@bp.get("/admin/audit-logs")
+@admin_required
+def admin_audit_logs():
+    """View audit logs with filtering and pagination (admin only)."""
+    user_id = request.args.get("user_id", type=int)
+    action = request.args.get("action", type=str)
+    entity_type = request.args.get("entity_type", type=str)
+    page = request.args.get("page", 1, type=int)
+    per_page = min(max(request.args.get("per_page", 50, type=int), 1), 200)
+
+    offset = (page - 1) * per_page
+
+    logs = db.get_audit_logs(
+        user_id=user_id,
+        action=action,
+        entity_type=entity_type,
+        limit=per_page,
+        offset=offset
+    )
+    total = db.count_audit_logs(
+        user_id=user_id,
+        action=action,
+        entity_type=entity_type
+    )
+
+    return jsonify(
+        audit_logs=[dict(r) for r in logs],
+        pagination={
+            "current_page": page,
+            "per_page": per_page,
+            "total_records": total,
+            "total_pages": (total + per_page - 1) // per_page,
+            "has_next": page * per_page < total,
+            "has_previous": page > 1,
+        }
+    )
+
+
+@bp.get("/admin/audit-logs/actions")
+@admin_required
+def admin_audit_log_actions():
+    """Get distinct action types for audit log filtering."""
+    conn = db.get_db()
+    rows = conn.execute("SELECT DISTINCT action FROM audit_log ORDER BY action").fetchall()
+    return jsonify(actions=[r["action"] for r in rows])
 
 
 # ============================================================================
@@ -263,7 +392,16 @@ def create_transaction():
     data = validate_transaction(request.get_json(silent=True))
     user_id = session.get("user_id")
     new_id = db.add_transaction(data, user_id=user_id)
-    return jsonify(db.row_to_dict(db.get_transaction(new_id, user_id=user_id))), 201
+    created = db.get_transaction(new_id, user_id=user_id)
+    # Audit log: transaction create
+    db.audit_log(
+        action="transaction_create",
+        entity_type="transaction",
+        entity_id=str(new_id),
+        user_id=user_id,
+        metadata={"type": data["type"], "amount_cents": data["amount_cents"], "category": data["category"], "date": data["date"]}
+    )
+    return jsonify(db.row_to_dict(created)), 201
 
 
 @bp.get("/transactions/<int:tx_id>")
@@ -287,8 +425,24 @@ def update_transaction(tx_id):
         return jsonify(error="transaction not found"), 404
 
     data = validate_transaction(request.get_json(silent=True))
+    # Capture old values for audit log
+    old_data = {
+        "type": existing["type"],
+        "amount_cents": existing["amount_cents"],
+        "category": existing["category"],
+        "note": existing["note"],
+        "date": existing["date"],
+    }
     db.update_transaction(tx_id, data, user_id=user_id)
     updated = db.get_transaction(tx_id, user_id=user_id)
+    # Audit log: transaction update
+    db.audit_log(
+        action="transaction_update",
+        entity_type="transaction",
+        entity_id=str(tx_id),
+        user_id=user_id,
+        metadata={"old": old_data, "new": {"type": data["type"], "amount_cents": data["amount_cents"], "category": data["category"], "note": data["note"], "date": data["date"]}}
+    )
     return jsonify(db.row_to_dict(updated)), 200
 
 
@@ -297,8 +451,30 @@ def update_transaction(tx_id):
 def delete_transaction(tx_id):
     """Delete a transaction ensuring user ownership (prevents IDOR)."""
     user_id = session.get("user_id")
+    existing = db.get_transaction(tx_id, user_id=user_id)
+    if not existing:
+        return jsonify(error="transaction not found"), 404
+
+    # Capture data for audit log before deletion
+    deleted_data = {
+        "type": existing["type"],
+        "amount_cents": existing["amount_cents"],
+        "category": existing["category"],
+        "note": existing["note"],
+        "date": existing["date"],
+    }
+
     if not db.delete_transaction(tx_id, user_id=user_id):
         return jsonify(error="transaction not found"), 404
+
+    # Audit log: transaction delete
+    db.audit_log(
+        action="transaction_delete",
+        entity_type="transaction",
+        entity_id=str(tx_id),
+        user_id=user_id,
+        metadata=deleted_data
+    )
     return "", 204
 
 
@@ -363,21 +539,32 @@ def export_user_excel():
 
     if "period" in request.args:
         start, end = _range()
-        raw_rows = db.list_transactions(start, end, user_id=user_id)
+        result = db.list_transactions(start, end, user_id=user_id)
     else:
         conn = db.get_db()
         raw_rows = conn.execute(
             "SELECT * FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC",
             (user_id,),
         ).fetchall()
+        result = {"transactions": raw_rows, "pagination": {}}
 
-    txs = [db.row_to_dict(r) for r in raw_rows]
+    txs = [db.row_to_dict(r) for r in result["transactions"]]
     buf = export_expenses_to_excel(
         txs,
         title=f"{user['full_name']} Expense Report",
         base_currency=current_app.config["BASE_CURRENCY"],
     )
     today_str = date.today().strftime("%Y_%m_%d")
+
+    # Audit log: excel export
+    db.audit_log(
+        action="excel_export",
+        entity_type="excel",
+        entity_id=f"expense_report_{today_str}",
+        user_id=user_id,
+        metadata={"record_count": len(txs), "period": request.args.get("period", "all")}
+    )
+
     return send_file(
         buf,
         as_attachment=True,
@@ -415,6 +602,15 @@ def import_user_excel():
     for rec in valid_records:
         db.add_transaction(rec, user_id=user_id)
         inserted_count += 1
+
+    # Audit log: excel import
+    db.audit_log(
+        action="excel_import",
+        entity_type="excel",
+        entity_id=uploaded_file.filename,
+        user_id=user_id,
+        metadata={"inserted_count": inserted_count, "rejected_count": parsed["rejected_count"], "filename": uploaded_file.filename}
+    )
 
     return jsonify({
         "success": True,
@@ -462,6 +658,14 @@ def guest_create_transaction():
 
     new_id = db.add_guest_transaction(guest_id, data, expires_at)
     row = db.get_guest_transaction(guest_id, new_id)
+    # Audit log: guest transaction create
+    db.audit_log(
+        action="guest_transaction_create",
+        entity_type="guest_transaction",
+        entity_id=str(new_id),
+        user_id=None,
+        metadata={"type": data["type"], "amount_cents": data["amount_cents"], "category": data["category"], "date": data["date"]}
+    )
     return jsonify(db.row_to_dict(row)), 201
 
 
@@ -486,8 +690,24 @@ def guest_update_transaction(tx_id):
         return jsonify(error="transaction not found"), 404
 
     data = validate_transaction(request.get_json(silent=True))
+    # Capture old values for audit log
+    old_data = {
+        "type": existing["type"],
+        "amount_cents": existing["amount_cents"],
+        "category": existing["category"],
+        "note": existing["note"],
+        "date": existing["date"],
+    }
     db.update_guest_transaction(guest_id, tx_id, data)
     updated = db.get_guest_transaction(guest_id, tx_id)
+    # Audit log: guest transaction update
+    db.audit_log(
+        action="guest_transaction_update",
+        entity_type="guest_transaction",
+        entity_id=str(tx_id),
+        user_id=None,
+        metadata={"old": old_data, "new": {"type": data["type"], "amount_cents": data["amount_cents"], "category": data["category"], "note": data["note"], "date": data["date"]}}
+    )
     return jsonify(db.row_to_dict(updated)), 200
 
 
@@ -496,8 +716,30 @@ def guest_update_transaction(tx_id):
 def guest_delete_transaction(tx_id):
     """Delete a guest transaction."""
     guest_id = get_current_guest_id()
+    existing = db.get_guest_transaction(guest_id, tx_id)
+    if not existing:
+        return jsonify(error="transaction not found"), 404
+
+    # Capture data for audit log before deletion
+    deleted_data = {
+        "type": existing["type"],
+        "amount_cents": existing["amount_cents"],
+        "category": existing["category"],
+        "note": existing["note"],
+        "date": existing["date"],
+    }
+
     if not db.delete_guest_transaction(guest_id, tx_id):
         return jsonify(error="transaction not found"), 404
+
+    # Audit log: guest transaction delete
+    db.audit_log(
+        action="guest_transaction_delete",
+        entity_type="guest_transaction",
+        entity_id=str(tx_id),
+        user_id=None,
+        metadata=deleted_data
+    )
     return "", 204
 
 
@@ -567,6 +809,16 @@ def guest_export_excel():
         base_currency=current_app.config["BASE_CURRENCY"],
     )
     today_str = date.today().strftime("%Y_%m_%d")
+
+    # Audit log: guest excel export
+    db.audit_log(
+        action="guest_excel_export",
+        entity_type="excel",
+        entity_id=f"guest_demo_expenses_{today_str}",
+        user_id=None,
+        metadata={"record_count": len(txs), "period": request.args.get("period", "all")}
+    )
+
     return send_file(
         buf,
         as_attachment=True,
@@ -605,6 +857,15 @@ def guest_import_excel():
     for rec in valid_records:
         db.add_guest_transaction(guest_id, rec, expires_at)
         inserted_count += 1
+
+    # Audit log: guest excel import
+    db.audit_log(
+        action="guest_excel_import",
+        entity_type="excel",
+        entity_id=uploaded_file.filename,
+        user_id=None,
+        metadata={"inserted_count": inserted_count, "rejected_count": parsed["rejected_count"], "filename": uploaded_file.filename}
+    )
 
     return jsonify({
         "success": True,

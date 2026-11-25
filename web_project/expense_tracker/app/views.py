@@ -145,8 +145,31 @@ def login():
                 data = validate_login(request.form.to_dict())
                 user = db.get_user_by_email(data["email"])
                 if not user or not verify_password(data["password"], user["password_hash"]):
+                    # Audit log: failed login
+                    if user:
+                        db.audit_log(
+                            action="login_failed",
+                            entity_type="user",
+                            entity_id=str(user["id"]),
+                            user_id=user["id"],
+                            metadata={"reason": "invalid_password"}
+                        )
+                    else:
+                        db.audit_log(
+                            action="login_failed",
+                            entity_type="user",
+                            metadata={"email": data["email"], "reason": "user_not_found"}
+                        )
                     error = "Invalid email or password."
                 elif not user["is_active"]:
+                    # Audit log: failed login - deactivated account
+                    db.audit_log(
+                        action="login_failed",
+                        entity_type="user",
+                        entity_id=str(user["id"]),
+                        user_id=user["id"],
+                        metadata={"reason": "account_deactivated"}
+                    )
                     error = "Account is deactivated. Please contact an administrator."
                 else:
                     login_user(user)
@@ -194,6 +217,14 @@ def register():
                         role=role,
                         is_active=1,
                     )
+                    # Audit log: user registration
+                    db.audit_log(
+                        action="user_register",
+                        entity_type="user",
+                        entity_id=str(user_id),
+                        user_id=user_id,
+                        metadata={"email": data["email"], "role": role}
+                    )
                     new_user = db.get_user_by_id(user_id)
                     login_user(new_user)
                     return redirect(url_for("views.index"))
@@ -228,12 +259,28 @@ def profile():
                         error = "Current password does not match."
                     else:
                         db.update_user(user["id"], password_hash=hash_password(updates["new_password"]))
+                        # Audit log: password change
+                        db.audit_log(
+                            action="password_change",
+                            entity_type="user",
+                            entity_id=str(user["id"]),
+                            user_id=user["id"]
+                        )
                         messages.append("Password updated successfully.")
 
                 if "full_name" in updates and not error:
                     if updates["full_name"] != user["full_name"]:
+                        old_name = user["full_name"]
                         db.update_user(user["id"], full_name=updates["full_name"])
                         session["user_name"] = updates["full_name"]
+                        # Audit log: profile update
+                        db.audit_log(
+                            action="profile_update",
+                            entity_type="user",
+                            entity_id=str(user["id"]),
+                            user_id=user["id"],
+                            metadata={"field": "full_name", "old_value": old_name, "new_value": updates["full_name"]}
+                        )
                         messages.append("Profile updated successfully.")
 
                 if messages and not error:
