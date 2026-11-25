@@ -44,6 +44,8 @@ SCHEMA_STATEMENTS = [
     created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 )""",
     "CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)",
+    "CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category)",
+    "CREATE INDEX IF NOT EXISTS idx_transactions_user_date_type ON transactions(user_id, date, type)",
     """CREATE TABLE IF NOT EXISTS guest_transactions (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     guest_id       TEXT    NOT NULL,
@@ -212,12 +214,7 @@ def init_schema(conn=None):
         except Exception:
             pass
 
-        # Safely create composite index on user_id and date
-        try:
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date)")
-        except Exception:
-            pass
-
+        
         # Ensure payment_method column exists on transactions table
         try:
             cur = conn.execute("PRAGMA table_info(transactions)")
