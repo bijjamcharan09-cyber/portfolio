@@ -3,22 +3,23 @@
  * Handles budget CRUD operations, utilization display, and notifications
  */
 
-const apiBase = document.body.dataset.guest === "true" ? "/api/guest" : "/api";
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
+const $ = window.EtUtils.$;
+const $$ = window.EtUtils.$$;
+const apiBase = window.EtUtils.apiBase;
+const money = window.EtUtils.money;
+const escapeHtml = window.EtUtils.escapeHtml;
+const moneyCents = (cents) => money((cents || 0) / 100);
 
-const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moneyCents = (cents) => money(cents / 100);
+let expenseCategories = [
+  "Food", "Transport", "Rent", "Bills", "Shopping",
+  "Health", "Education", "Entertainment", "Other"
+];
 
 function say(el, text, isError = true) {
   if (!el) return;
   el.textContent = text;
   el.hidden = false;
-  if (isError) {
-    el.className = "message error";
-  } else {
-    el.className = "message success";
-  }
+  el.className = isError ? "message error" : "message success";
 }
 
 async function api(path, options = {}) {
@@ -47,37 +48,42 @@ function getUtilizationClass(pct) {
 }
 
 function createProgressBar(pct, budgetName) {
-  const clampedPct = Math.min(Math.max(pct, 0), 100);
-  const cls = getUtilizationClass(pct);
+  const safePct = Number(pct) || 0;
+  const clampedPct = Math.min(Math.max(safePct, 0), 100);
+  const cls = getUtilizationClass(safePct);
+  const safeName = escapeHtml(budgetName);
   return `
-    <div class="progress-bar-wrapper" role="progressbar" aria-valuenow="${pct.toFixed(1)}" aria-valuemin="0" aria-valuemax="100" aria-label="${budgetName} budget utilization">
+    <div class="progress-bar-wrapper" role="progressbar" aria-valuenow="${safePct.toFixed(1)}" aria-valuemin="0" aria-valuemax="100" aria-label="${safeName} budget utilization">
       <div class="progress-bar ${cls}" style="width: ${clampedPct}%"></div>
     </div>
-    <span class="progress-label ${cls}">${pct.toFixed(1)}%</span>
+    <span class="progress-label ${cls}">${safePct.toFixed(1)}%</span>
   `;
 }
 
 function renderBudgetCard(budget, utilization) {
-  const isExceeded = utilization.is_exceeded;
-  const isWarning = utilization.is_warning && !isExceeded;
+  const isExceeded = Boolean(utilization.is_exceeded);
+  const isWarning = Boolean(utilization.is_warning) && !isExceeded;
   const statusClass = isExceeded ? "status-exceeded" : isWarning ? "status-warning" : "status-ok";
   const statusText = isExceeded ? "Exceeded" : isWarning ? "Warning" : "On Track";
   const statusIcon = isExceeded ? "⚠️" : isWarning ? "⚡" : "✅";
 
-  const spent = moneyCents(utilization.spent_cents);
-  const budgetAmt = moneyCents(utilization.budget_amount_cents);
-  const remaining = moneyCents(Math.max(utilization.budget_amount_cents - utilization.spent_cents, 0));
+  const spentCents = utilization.spent_cents ?? Math.round((utilization.spent || 0) * 100);
+  const budgetCents = utilization.budget_amount_cents ?? budget.amount_cents;
+  const remainingCents = Math.max(budgetCents - spentCents, 0);
+
+  const safeName = escapeHtml(budget.name);
+  const safeCategory = budget.category ? escapeHtml(budget.category) : "";
 
   return `
     <article class="budget-card ${statusClass}" data-id="${budget.id}">
       <div class="budget-header">
         <div class="budget-title-row">
-          <h4 class="budget-name">${budget.name}</h4>
+          <h4 class="budget-name">${safeName}</h4>
           <span class="budget-badge ${statusClass}">${statusIcon} ${statusText}</span>
         </div>
         <div class="budget-meta">
           <span class="budget-period">${budget.period.charAt(0).toUpperCase() + budget.period.slice(1)}</span>
-          ${budget.category ? `<span class="budget-category">${budget.category}</span>` : `<span class="budget-category overall">Overall</span>`}
+          ${safeCategory ? `<span class="budget-category">${safeCategory}</span>` : `<span class="budget-category overall">Overall</span>`}
         </div>
       </div>
 
@@ -88,15 +94,15 @@ function renderBudgetCard(budget, utilization) {
       <div class="budget-amounts">
         <div class="budget-amount">
           <span class="budget-amount-label">Spent</span>
-          <span class="budget-amount-value expense">${spent}</span>
+          <span class="budget-amount-value expense">${moneyCents(spentCents)}</span>
         </div>
         <div class="budget-amount">
           <span class="budget-amount-label">Budget</span>
-          <span class="budget-amount-value">${budgetAmt}</span>
+          <span class="budget-amount-value">${moneyCents(budgetCents)}</span>
         </div>
         <div class="budget-amount">
           <span class="budget-amount-label">Remaining</span>
-          <span class="budget-amount-value income">${remaining}</span>
+          <span class="budget-amount-value income">${moneyCents(remainingCents)}</span>
         </div>
       </div>
 
@@ -106,18 +112,24 @@ function renderBudgetCard(budget, utilization) {
       </div>
 
       <div class="budget-actions">
-        <button type="button" class="btn-sm btn-outline btn-view" data-id="${budget.id}" aria-label="View details for ${budget.name}">View</button>
-        <button type="button" class="btn-sm btn-outline btn-edit" data-id="${budget.id}" aria-label="Edit ${budget.name}">Edit</button>
-        <button type="button" class="btn-sm btn-danger btn-delete" data-id="${budget.id}" aria-label="Delete ${budget.name}">Delete</button>
+        <button type="button" class="btn-sm btn-outline btn-view" data-id="${budget.id}" aria-label="View details for ${safeName}">View</button>
+        <button type="button" class="btn-sm btn-outline btn-edit" data-id="${budget.id}" aria-label="Edit ${safeName}">Edit</button>
+        <button type="button" class="btn-sm btn-danger btn-delete" data-id="${budget.id}" aria-label="Delete ${safeName}">Delete</button>
       </div>
     </article>
   `;
 }
 
-function updateBudgetOverview(utilizations) {
-  const totalBudgeted = utilizations.reduce((sum, u) => sum + u.budget_amount_cents, 0);
-  const totalSpent = utilizations.reduce((sum, u) => sum + u.spent_cents, 0);
-  const activeCount = utilizations.length;
+function updateBudgetOverview(budgets, utilizations) {
+  const totalBudgeted = utilizations.reduce(
+    (sum, u) => sum + (u.budget_amount_cents ?? Math.round((u.budget_amount || 0) * 100)),
+    0
+  );
+  const totalSpent = utilizations.reduce(
+    (sum, u) => sum + (u.spent_cents ?? Math.round((u.spent || 0) * 100)),
+    0
+  );
+  const activeCount = budgets.filter(b => b.is_active).length;
 
   $("#total-budgeted").textContent = moneyCents(totalBudgeted);
   $("#total-spent").textContent = moneyCents(totalSpent);
@@ -128,12 +140,15 @@ function updateBudgetOverview(utilizations) {
 
 async function loadBudgets() {
   try {
-    const [budgets, utilizations] = await Promise.all([
+    const [budgetsResp, utilResp] = await Promise.all([
       api("/budgets"),
       api("/budgets/utilization")
     ]);
 
-    if (!budgets || !utilizations) return;
+    if (!budgetsResp || !utilResp) return;
+
+    const budgets = budgetsResp.budgets || [];
+    const utilizations = utilResp.budgets || [];
 
     const container = $("#budgets-container");
     const empty = $("#budgets-empty");
@@ -148,7 +163,6 @@ async function loadBudgets() {
     empty.hidden = true;
     container.hidden = false;
 
-    // Create utilization lookup
     const utilMap = {};
     utilizations.forEach(u => { utilMap[u.budget_id] = u; });
 
@@ -160,7 +174,7 @@ async function loadBudgets() {
       is_exceeded: false
     })).join("");
 
-    updateBudgetOverview(utilizations);
+    updateBudgetOverview(budgets, utilizations);
     attachBudgetEventListeners();
   } catch (err) {
     say($("#budget-message"), err.message);
@@ -168,17 +182,14 @@ async function loadBudgets() {
 }
 
 function attachBudgetEventListeners() {
-  // View buttons
   $$(".btn-view").forEach(btn => {
     btn.addEventListener("click", () => openBudgetDetail(btn.dataset.id));
   });
 
-  // Edit buttons
   $$(".btn-edit").forEach(btn => {
     btn.addEventListener("click", () => openBudgetModal(btn.dataset.id));
   });
 
-  // Delete buttons
   $$(".btn-delete").forEach(btn => {
     btn.addEventListener("click", () => deleteBudget(btn.dataset.id));
   });
@@ -186,20 +197,25 @@ function attachBudgetEventListeners() {
 
 async function openBudgetDetail(budgetId) {
   try {
-    const [budget, utilization] = await Promise.all([
+    const [budget, utilResp] = await Promise.all([
       api(`/budgets/${budgetId}`),
-      api(`/budgets/utilization`)
+      api("/budgets/utilization")
     ]);
 
-    if (!budget || !utilization) return;
+    if (!budget || !utilResp) return;
 
-    const util = utilization.find(u => u.budget_id === budgetId) || {
+    const utilizations = utilResp.budgets || [];
+    const numericId = Number(budgetId);
+    const util = utilizations.find(u => u.budget_id === numericId) || {
       spent_cents: 0,
       budget_amount_cents: budget.amount_cents,
       utilization_pct: 0,
       is_warning: false,
       is_exceeded: false
     };
+
+    const spentCents = util.spent_cents ?? Math.round((util.spent || 0) * 100);
+    const budgetCents = util.budget_amount_cents ?? budget.amount_cents;
 
     const isExceeded = util.is_exceeded;
     const isWarning = util.is_warning && !isExceeded;
@@ -210,7 +226,7 @@ async function openBudgetDetail(budgetId) {
     detailBody.innerHTML = `
       <div class="budget-detail">
         <div class="budget-detail-header ${statusClass}">
-          <h4>${budget.name}</h4>
+          <h4>${escapeHtml(budget.name)}</h4>
           <span class="detail-badge ${statusClass}">${statusText}</span>
         </div>
 
@@ -221,7 +237,7 @@ async function openBudgetDetail(budgetId) {
           </div>
           <div class="detail-item">
             <span class="detail-label">Category</span>
-            <span class="detail-value">${budget.category || "Overall (all categories)"}</span>
+            <span class="detail-value">${budget.category ? escapeHtml(budget.category) : "Overall (all categories)"}</span>
           </div>
           <div class="detail-item">
             <span class="detail-label">Warning Threshold</span>
@@ -249,20 +265,20 @@ async function openBudgetDetail(budgetId) {
         <div class="detail-amounts">
           <div class="detail-amount">
             <span class="detail-amount-label">Amount Spent</span>
-            <span class="detail-amount-value expense">${moneyCents(util.spent_cents)}</span>
+            <span class="detail-amount-value expense">${moneyCents(spentCents)}</span>
           </div>
           <div class="detail-amount">
             <span class="detail-amount-label">Budget Amount</span>
-            <span class="detail-amount-value">${moneyCents(util.budget_amount_cents)}</span>
+            <span class="detail-amount-value">${moneyCents(budgetCents)}</span>
           </div>
           <div class="detail-amount">
             <span class="detail-amount-label">Remaining</span>
-            <span class="detail-amount-value income">${moneyCents(Math.max(util.budget_amount_cents - util.spent_cents, 0))}</span>
+            <span class="detail-amount-value income">${moneyCents(Math.max(budgetCents - spentCents, 0))}</span>
           </div>
         </div>
 
-        ${isExceeded ? `<div class="alert alert-error">You have exceeded your budget by ${moneyCents(util.spent_cents - util.budget_amount_cents)}</div>` : ""}
-        ${isWarning && !isExceeded ? `<div class="alert alert-warning">You have used ${util.utilization_pct.toFixed(1)}% of your budget (threshold: ${budget.warning_threshold}%)</div>` : ""}
+        ${isExceeded ? `<div class="alert alert-error">You have exceeded your budget by ${moneyCents(spentCents - budgetCents)}</div>` : ""}
+        ${isWarning && !isExceeded ? `<div class="alert alert-warning">You have used ${(Number(util.utilization_pct) || 0).toFixed(1)}% of your budget (threshold: ${budget.warning_threshold}%)</div>` : ""}
       </div>
     `;
 
@@ -279,13 +295,11 @@ function openBudgetModal(budgetId = null) {
   $("#budget-modal-title").textContent = isEdit ? "Edit Budget" : "Create Budget";
   $("#btn-submit-budget").textContent = isEdit ? "Update Budget" : "Create Budget";
 
-  // Populate categories
   populateCategorySelect($("#budget-category"));
 
   if (isEdit) {
     loadBudgetForEdit(budgetId);
   } else {
-    // Set default start date to today
     $("#budget-start").value = new Date().toLocaleDateString("en-CA");
   }
 
@@ -310,18 +324,13 @@ async function loadBudgetForEdit(budgetId) {
 }
 
 function populateCategorySelect(selectEl) {
-  // Categories will be loaded from the existing categories API
-  // For now, we'll use common categories
-  const categories = [
-    "Housing", "Food & Dining", "Transportation", "Utilities",
-    "Healthcare", "Entertainment", "Shopping", "Education",
-    "Personal Care", "Gifts & Donations", "Investments", "Other"
-  ];
-
+  if (!selectEl) return;
   const currentValue = selectEl.value;
   selectEl.innerHTML = '<option value="">Overall (all categories)</option>' +
-    categories.map(c => `<option value="${c}">${c}</option>`).join("");
-  selectEl.value = currentValue;
+    expenseCategories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  if (currentValue) {
+    selectEl.value = currentValue;
+  }
 }
 
 function closeBudgetModal() {
@@ -335,7 +344,6 @@ function closeDetailModal() {
 
 async function submitBudget(e) {
   e.preventDefault();
-  const form = e.target;
   const budgetId = $("#budget-id").value;
   const isEdit = !!budgetId;
 
@@ -343,8 +351,8 @@ async function submitBudget(e) {
     name: $("#budget-name").value.trim(),
     period: $("#budget-period").value,
     category: $("#budget-category").value || null,
-    amount_cents: Math.round(parseFloat($("#budget-amount").value) * 100),
-    warning_threshold: parseInt($("#budget-warning").value) || 80,
+    amount: $("#budget-amount").value,
+    warning_threshold: parseInt($("#budget-warning").value, 10) || 80,
     start_date: $("#budget-start").value,
     end_date: $("#budget-end").value || null
   };
@@ -384,20 +392,32 @@ async function deleteBudget(budgetId) {
   }
 }
 
-// Event Listeners
-document.addEventListener("DOMContentLoaded", () => {
-  // Load categories for selects
-  populateCategorySelect($("#budget-category"));
-  populateCategorySelect($("#recurring-category"));
+async function loadCategoriesAndBadge() {
+  try {
+    const [cats, unread] = await Promise.all([
+      api("/categories").catch(() => null),
+      api("/notifications/unread-count").catch(() => null)
+    ]);
+    if (cats && Array.isArray(cats.expense)) {
+      expenseCategories = cats.expense;
+      populateCategorySelect($("#budget-category"));
+    }
+    const count = unread?.unread_count ?? 0;
+    const badge = $("#notif-badge");
+    if (badge) {
+      badge.textContent = count > 99 ? "99+" : count;
+      badge.hidden = count <= 0;
+    }
+  } catch (_) {}
+}
 
-  // New budget button
+document.addEventListener("DOMContentLoaded", () => {
+  populateCategorySelect($("#budget-category"));
+
   $("#btn-new-budget")?.addEventListener("click", () => openBudgetModal());
   $("#btn-first-budget")?.addEventListener("click", () => openBudgetModal());
-
-  // Form submission
   $("#budget-form")?.addEventListener("submit", submitBudget);
 
-  // Close buttons
   $("#btn-close-budget-modal")?.addEventListener("click", closeBudgetModal);
   $("#btn-cancel-budget")?.addEventListener("click", closeBudgetModal);
   $("#budget-modal-backdrop")?.addEventListener("click", closeBudgetModal);
@@ -406,6 +426,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#btn-close-detail")?.addEventListener("click", closeDetailModal);
   $("#budget-detail-backdrop")?.addEventListener("click", closeDetailModal);
 
-  // Initial load
+  loadCategoriesAndBadge();
   loadBudgets();
 });

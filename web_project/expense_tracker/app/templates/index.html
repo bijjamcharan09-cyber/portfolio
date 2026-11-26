@@ -183,6 +183,8 @@
       </div>
     </div>
   </div>
+{% endblock %}
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 {% endblock %}

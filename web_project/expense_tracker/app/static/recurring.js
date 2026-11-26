@@ -3,22 +3,24 @@
  * Handles recurring transaction CRUD, pause/resume, and processing
  */
 
-const apiBase = document.body.dataset.guest === "true" ? "/api/guest" : "/api";
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
+const $ = window.EtUtils.$;
+const $$ = window.EtUtils.$$;
+const apiBase = window.EtUtils.apiBase;
+const money = window.EtUtils.money;
+const escapeHtml = window.EtUtils.escapeHtml;
+const moneyCents = (cents) => money((cents || 0) / 100);
 
-const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moneyCents = (cents) => money(cents / 100);
+let categoriesByType = {
+  expense: ["Food", "Transport", "Rent", "Bills", "Shopping", "Health", "Education", "Entertainment", "Other"],
+  income: ["Salary", "Freelance", "Gift", "Investment", "Other"]
+};
+let editingNextDueDate = null;
 
 function say(el, text, isError = true) {
   if (!el) return;
   el.textContent = text;
   el.hidden = false;
-  if (isError) {
-    el.className = "message error";
-  } else {
-    el.className = "message success";
-  }
+  el.className = isError ? "message error" : "message success";
 }
 
 async function api(path, options = {}) {
@@ -56,17 +58,31 @@ function getStatusBadge(isActive, isPaused) {
   return '<span class="status-badge status-active">Active</span>';
 }
 
+function populateRecurringCategories(selectedCategory = null) {
+  const typeEl = $("#recurring-type");
+  const catEl = $("#recurring-category");
+  if (!typeEl || !catEl) return;
+
+  const type = typeEl.value || "expense";
+  const cats = categoriesByType[type] || [];
+  catEl.innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  if (selectedCategory && cats.includes(selectedCategory)) {
+    catEl.value = selectedCategory;
+  }
+}
+
 function renderRecurringCard(rt) {
   const nextDue = formatDate(rt.next_due_date);
   const startDate = formatDate(rt.start_date);
   const endDate = rt.end_date ? formatDate(rt.end_date) : "No end date";
   const statusBadge = getStatusBadge(rt.is_active, rt.is_paused);
+  const safeCat = escapeHtml(rt.category);
 
   return `
     <article class="recurring-card" data-id="${rt.id}">
       <div class="recurring-header">
         <div class="recurring-title-row">
-          <h4 class="recurring-category">${rt.category}</h4>
+          <h4 class="recurring-category">${safeCat}</h4>
           <span class="recurring-type ${rt.type}">${rt.type === "income" ? "+" : "−"}${moneyCents(rt.amount_cents)}</span>
         </div>
         <div class="recurring-meta">
@@ -88,18 +104,18 @@ function renderRecurringCard(rt) {
           <span class="detail-label">Ends</span>
           <span class="detail-value">${endDate}</span>
         </div>
-        ${rt.note ? `<div class="detail-row"><span class="detail-label">Note</span><span class="detail-value">${rt.note}</span></div>` : ""}
-        ${rt.payment_method ? `<div class="detail-row"><span class="detail-label">Payment</span><span class="detail-value">${rt.payment_method}</span></div>` : ""}
+        ${rt.note ? `<div class="detail-row"><span class="detail-label">Note</span><span class="detail-value">${escapeHtml(rt.note)}</span></div>` : ""}
+        ${rt.payment_method ? `<div class="detail-row"><span class="detail-label">Payment</span><span class="detail-value">${escapeHtml(rt.payment_method)}</span></div>` : ""}
       </div>
 
       <div class="recurring-actions">
         ${rt.is_active && !rt.is_paused ? `
-          <button type="button" class="btn-sm btn-outline btn-pause" data-id="${rt.id}" aria-label="Pause ${rt.category}">Pause</button>
-        ` : rt.is_paused ? `
-          <button type="button" class="btn-sm btn-primary btn-resume" data-id="${rt.id}" aria-label="Resume ${rt.category}">Resume</button>
+          <button type="button" class="btn-sm btn-outline btn-pause" data-id="${rt.id}" aria-label="Pause ${safeCat}">Pause</button>
+        ` : rt.is_active && rt.is_paused ? `
+          <button type="button" class="btn-sm btn-primary btn-resume" data-id="${rt.id}" aria-label="Resume ${safeCat}">Resume</button>
         ` : ''}
-        <button type="button" class="btn-sm btn-outline btn-edit" data-id="${rt.id}" aria-label="Edit ${rt.category}">Edit</button>
-        <button type="button" class="btn-sm btn-danger btn-delete" data-id="${rt.id}" aria-label="Delete ${rt.category}">Delete</button>
+        <button type="button" class="btn-sm btn-outline btn-edit" data-id="${rt.id}" aria-label="Edit ${safeCat}">Edit</button>
+        <button type="button" class="btn-sm btn-danger btn-delete" data-id="${rt.id}" aria-label="Delete ${safeCat}">Delete</button>
       </div>
     </article>
   `;
@@ -107,9 +123,10 @@ function renderRecurringCard(rt) {
 
 async function loadRecurring() {
   try {
-    const recurring = await api("/recurring");
-    if (!recurring) return;
+    const resp = await api("/recurring");
+    if (!resp) return;
 
+    const recurring = resp.recurring || [];
     const container = $("#recurring-container");
     const empty = $("#recurring-empty");
 
@@ -129,22 +146,18 @@ async function loadRecurring() {
 }
 
 function attachRecurringEventListeners() {
-  // Pause buttons
   $$(".btn-pause").forEach(btn => {
     btn.addEventListener("click", () => pauseRecurring(btn.dataset.id));
   });
 
-  // Resume buttons
   $$(".btn-resume").forEach(btn => {
     btn.addEventListener("click", () => resumeRecurring(btn.dataset.id));
   });
 
-  // Edit buttons
   $$(".btn-edit").forEach(btn => {
     btn.addEventListener("click", () => openRecurringModal(btn.dataset.id));
   });
 
-  // Delete buttons
   $$(".btn-delete").forEach(btn => {
     btn.addEventListener("click", () => deleteRecurring(btn.dataset.id));
   });
@@ -152,17 +165,17 @@ function attachRecurringEventListeners() {
 
 function openRecurringModal(recurringId = null) {
   const isEdit = !!recurringId;
+  editingNextDueDate = null;
   $("#recurring-form").reset();
   $("#recurring-id").value = recurringId || "";
   $("#recurring-modal-title").textContent = isEdit ? "Edit Recurring Transaction" : "Create Recurring Transaction";
-  $("#btn-submit-recurring").textContent = isEdit ? "Update" : "Create";
+  $("#btn-submit-recurring").textContent = isEdit ? "Update" : "Create Recurring";
 
-  // Set default start date to today
+  populateRecurringCategories();
+
   if (!isEdit) {
     $("#recurring-start").value = new Date().toLocaleDateString("en-CA");
-  }
-
-  if (isEdit) {
+  } else {
     loadRecurringForEdit(recurringId);
   }
 
@@ -174,9 +187,10 @@ async function loadRecurringForEdit(rtId) {
     const rt = await api(`/recurring/${rtId}`);
     if (!rt) return;
 
+    editingNextDueDate = rt.next_due_date;
     $("#recurring-type").value = rt.type;
+    populateRecurringCategories(rt.category);
     $("#recurring-amount").value = (rt.amount_cents / 100).toFixed(2);
-    $("#recurring-category").value = rt.category;
     $("#recurring-frequency").value = rt.frequency;
     $("#recurring-note").value = rt.note || "";
     $("#recurring-payment").value = rt.payment_method || "";
@@ -190,23 +204,25 @@ async function loadRecurringForEdit(rtId) {
 function closeRecurringModal() {
   $("#recurring-modal").hidden = true;
   $("#recurring-form").reset();
+  editingNextDueDate = null;
 }
 
 async function submitRecurring(e) {
   e.preventDefault();
-  const form = e.target;
   const rtId = $("#recurring-id").value;
   const isEdit = !!rtId;
+  const startDate = $("#recurring-start").value;
 
   const data = {
     type: $("#recurring-type").value,
-    amount_cents: Math.round(parseFloat($("#recurring-amount").value) * 100),
+    amount: $("#recurring-amount").value,
     category: $("#recurring-category").value,
     frequency: $("#recurring-frequency").value,
     note: $("#recurring-note").value.trim(),
     payment_method: $("#recurring-payment").value,
-    start_date: $("#recurring-start").value,
-    end_date: $("#recurring-end").value || null
+    start_date: startDate,
+    end_date: $("#recurring-end").value || null,
+    next_due_date: isEdit ? (editingNextDueDate || startDate) : startDate
   };
 
   try {
@@ -266,6 +282,7 @@ async function deleteRecurring(rtId) {
 
 async function processRecurring() {
   const btn = $("#btn-process-recurring");
+  if (!btn) return;
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = "Processing...";
@@ -284,23 +301,39 @@ async function processRecurring() {
   }
 }
 
-// Event Listeners
+async function initCategoriesAndBadge() {
+  try {
+    const [cats, unread] = await Promise.all([
+      api("/categories").catch(() => null),
+      api("/notifications/unread-count").catch(() => null)
+    ]);
+    if (cats && cats.expense && cats.income) {
+      categoriesByType = cats;
+      populateRecurringCategories();
+    }
+    const count = unread?.unread_count ?? 0;
+    const badge = $("#notif-badge");
+    if (badge) {
+      badge.textContent = count > 99 ? "99+" : count;
+      badge.hidden = count <= 0;
+    }
+  } catch (_) {}
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  // New recurring button
+  populateRecurringCategories();
+
+  $("#recurring-type")?.addEventListener("change", () => populateRecurringCategories());
   $("#btn-new-recurring")?.addEventListener("click", () => openRecurringModal());
   $("#btn-first-recurring")?.addEventListener("click", () => openRecurringModal());
-
-  // Form submission
   $("#recurring-form")?.addEventListener("submit", submitRecurring);
 
-  // Close buttons
   $("#btn-close-recurring-modal")?.addEventListener("click", closeRecurringModal);
   $("#btn-cancel-recurring")?.addEventListener("click", closeRecurringModal);
   $("#recurring-modal-backdrop")?.addEventListener("click", closeRecurringModal);
 
-  // Process button
   $("#btn-process-recurring")?.addEventListener("click", processRecurring);
 
-  // Initial load
+  initCategoriesAndBadge();
   loadRecurring();
 });

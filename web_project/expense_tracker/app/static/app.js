@@ -1,10 +1,12 @@
-const $ = (sel) => document.querySelector(sel);
-const state = { period: "month", categories: {}, editingId: null, page: 1, hasNext: false, hasPrev: false };
 const isGuest = document.body.dataset.guest === "true";
-const apiBase = isGuest ? "/api/guest" : "/api";
+const state = { period: "month", categories: {}, editingId: null, page: 1, hasNext: false, hasPrev: false };
 const PER_PAGE = 20;
 
-const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Use shared utilities for this module (defined in etutils.js)
+const $ = window.EtUtils.$;
+const $$ = window.EtUtils.$$;
+const apiBase = window.EtUtils.apiBase;
+const money = window.EtUtils.money;
 
 async function api(path, options = {}) {
   options.credentials = "same-origin";
@@ -167,17 +169,21 @@ async function refresh() {
   } catch (err) { say(err.message); }
 }
 
-$("#tx-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const body = Object.fromEntries(new FormData(form));
-  try {
-    if (state.editingId) {
-      await api("/transactions/" + state.editingId, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+// Event listeners attached after DOM is ready
+document.addEventListener("DOMContentLoaded", () => {
+  const txForm = $("#tx-form");
+  if (txForm) {
+    txForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const body = Object.fromEntries(new FormData(form));
+      try {
+        if (state.editingId) {
+          await api("/transactions/" + state.editingId, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
       cancelEdit();
     } else {
       await api("/transactions", {
@@ -193,59 +199,13 @@ $("#tx-form").addEventListener("submit", async (e) => {
   } catch (err) { say(err.message); }
 });
 
-$("#convert-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  try {
-    const r = await api(`/convert?to=${encodeURIComponent($("#to").value)}&${query()}`);
-    if (r) {
-      $("#converted").textContent = `${money(r.converted)} ${r.to} (1 ${r.base} = ${r.rate} ${r.to})`;
-    }
-  } catch (err) { $("#converted").textContent = err.message; }
-});
-
-$("#tabs").addEventListener("click", (e) => {
-  if (!e.target.dataset.period) return;
-  state.period = e.target.dataset.period;
-  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b === e.target));
-  $("#days-wrap").hidden = state.period !== "days";
-  refresh();
-});
-
-document.querySelectorAll("input[name=type]").forEach((r) => r.addEventListener("change", fillCategories));
-$("#anchor").addEventListener("change", () => { state.page = 1; refresh(); });
-$("#days").addEventListener("change", () => { state.page = 1; refresh(); });
-
-$("#btn-prev-page")?.addEventListener("click", () => {
-  if (state.hasPrev) {
-    state.page -= 1;
-    refresh();
-  }
-});
-
-$("#btn-next-page")?.addEventListener("click", () => {
-  if (state.hasNext) {
-    state.page += 1;
-    refresh();
-  }
-});
-
 // ============================================================================
 // Excel Export & Import Handlers
 // ============================================================================
 
-$("#btn-export-excel")?.addEventListener("click", () => {
-  window.location.href = `${apiBase}/excel/export?${query()}`;
-});
-
-const modal = $("#import-modal");
-const fileInput = $("#excel-file");
-const dropZone = $("#drop-zone");
-const preview = $("#file-preview");
-const previewName = $("#file-preview-name");
-const importSummary = $("#import-summary");
-const importForm = $("#import-form");
-
 function openImportModal() {
+  const modal = $("#import-modal");
+  const importSummary = $("#import-summary");
   if (!modal) return;
   modal.hidden = false;
   if (importSummary) {
@@ -256,73 +216,187 @@ function openImportModal() {
 }
 
 function closeImportModal() {
+  const modal = $("#import-modal");
   if (!modal) return;
   modal.hidden = true;
   resetFileInput();
 }
 
 function resetFileInput() {
+  const fileInput = $("#excel-file");
+  const preview = $("#file-preview");
+  const dropZone = $("#drop-zone");
   if (fileInput) fileInput.value = "";
   if (preview) preview.hidden = true;
   if (dropZone) dropZone.classList.remove("dragover");
 }
 
-$("#btn-open-import")?.addEventListener("click", openImportModal);
-$("#btn-close-modal")?.addEventListener("click", closeImportModal);
-$("#btn-cancel-import")?.addEventListener("click", closeImportModal);
-$("#modal-backdrop")?.addEventListener("click", closeImportModal);
-
-$("#btn-clear-file")?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  resetFileInput();
-});
-
-$("#link-download-template")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  window.location.href = `${apiBase}/excel/template`;
-});
-
-fileInput?.addEventListener("change", () => {
-  if (fileInput.files && fileInput.files.length > 0) {
-    previewName.textContent = fileInput.files[0].name;
-    preview.hidden = false;
-  } else {
-    preview.hidden = true;
-  }
-});
-
-if (dropZone) {
-  ["dragenter", "dragover"].forEach((eventName) => {
-    dropZone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropZone.classList.add("dragover");
-    });
+// All DOM-dependent initialization
+document.addEventListener("DOMContentLoaded", () => {
+  // Convert form
+  $("#convert-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api(`/convert?to=${encodeURIComponent($("#to").value)}&${query()}`);
+      if (r) {
+        $("#converted").textContent = `${money(r.converted)} ${r.to} (1 ${r.base} = ${r.rate} ${r.to})`;
+      }
+    } catch (err) { $("#converted").textContent = err.message; }
   });
 
-  ["dragleave", "drop"].forEach((eventName) => {
-    dropZone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropZone.classList.remove("dragover");
-    });
+  // Tabs
+  $("#tabs")?.addEventListener("click", (e) => {
+    if (!e.target.dataset.period) return;
+    state.period = e.target.dataset.period;
+    document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b === e.target));
+    $("#days-wrap").hidden = state.period !== "days";
+    refresh();
   });
 
-  dropZone.addEventListener("drop", (e) => {
-    const dt = e.dataTransfer;
-    if (dt && dt.files.length > 0) {
-      fileInput.files = dt.files;
-      previewName.textContent = dt.files[0].name;
+  // Type radio change
+  document.querySelectorAll("input[name=type]").forEach((r) => r.addEventListener("change", fillCategories));
+
+  // Date anchor and days
+  $("#anchor")?.addEventListener("change", () => { state.page = 1; refresh(); });
+  $("#days")?.addEventListener("change", () => { state.page = 1; refresh(); });
+
+  // Pagination
+  $("#btn-prev-page")?.addEventListener("click", () => {
+    if (state.hasPrev) {
+      state.page -= 1;
+      refresh();
+    }
+  });
+
+  $("#btn-next-page")?.addEventListener("click", () => {
+    if (state.hasNext) {
+      state.page += 1;
+      refresh();
+    }
+  });
+
+  // Excel Export
+  $("#btn-export-excel")?.addEventListener("click", () => {
+    window.location.href = `${apiBase}/excel/export?${query()}`;
+  });
+
+  // Excel Import Modal elements
+  const modal = $("#import-modal");
+  const fileInput = $("#excel-file");
+  const dropZone = $("#drop-zone");
+  const preview = $("#file-preview");
+  const previewName = $("#file-preview-name");
+  const importSummary = $("#import-summary");
+  const importForm = $("#import-form");
+
+  $("#btn-open-import")?.addEventListener("click", openImportModal);
+  $("#btn-close-modal")?.addEventListener("click", closeImportModal);
+  $("#btn-cancel-import")?.addEventListener("click", closeImportModal);
+  $("#modal-backdrop")?.addEventListener("click", closeImportModal);
+
+  $("#btn-clear-file")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    resetFileInput();
+  });
+
+  $("#link-download-template")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    window.location.href = `${apiBase}/excel/template`;
+  });
+
+  fileInput?.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files.length > 0) {
+      previewName.textContent = fileInput.files[0].name;
       preview.hidden = false;
+    } else {
+      preview.hidden = true;
     }
   });
 
-  dropZone.addEventListener("click", (e) => {
-    if (e.target.id !== "btn-clear-file") {
-      fileInput.click();
+  if (dropZone) {
+    ["dragenter", "dragover"].forEach((eventName) => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add("dragover");
+      });
+    });
+
+    ["dragleave", "drop"].forEach((eventName) => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove("dragover");
+      });
+    });
+
+    dropZone.addEventListener("drop", (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files.length > 0) {
+        fileInput.files = dt.files;
+        previewName.textContent = dt.files[0].name;
+        preview.hidden = false;
+      }
+    });
+
+    dropZone.addEventListener("click", (e) => {
+      if (e.target.id !== "btn-clear-file") {
+        fileInput.click();
+      }
+    });
+  }
+
+  // Initial load
+  const today = new Date().toLocaleDateString("en-CA");
+  $("#anchor").value = today;
+  $("#tx-date").value = today;
+  api("/categories").then(cats => {
+    state.categories = cats || {};
+    fillCategories();
+    refresh();
+  });
+
+  // Import form submission
+  importForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!fileInput.files || !fileInput.files.length) {
+      alert("Please select an .xlsx file first.");
+      return;
+    }
+
+    const submitBtn = $("#btn-submit-import");
+    const origText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Importing...";
+    importSummary.hidden = true;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      const res = await fetch(`${apiBase}/excel/import`, {
+        method: "POST",
+        credentials: "same-origin",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Import failed.");
+      }
+
+      importSummary.hidden = false;
+      renderImportSummary(data);
+      refresh();
+    } catch (err) {
+      importSummary.hidden = false;
+      importSummary.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = origText;
     }
   });
-}
+});
 
 function renderImportSummary(result) {
   const { success_count, rejected_count, errors } = result;
@@ -349,55 +423,3 @@ function renderImportSummary(result) {
   importSummary.innerHTML = html;
 }
 
-importForm?.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  if (!fileInput.files || !fileInput.files.length) {
-    alert("Please select an .xlsx file first.");
-    return;
-  }
-
-  const submitBtn = $("#btn-submit-import");
-  const origText = submitBtn.textContent;
-  submitBtn.disabled = true;
-  submitBtn.textContent = "Importing...";
-  importSummary.hidden = true;
-
-  try {
-    const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-
-    const res = await fetch(`${apiBase}/excel/import`, {
-      method: "POST",
-      credentials: "same-origin",
-      body: formData,
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || "Import failed.");
-    }
-
-    importSummary.hidden = false;
-    renderImportSummary(data);
-    refresh();
-  } catch (err) {
-    importSummary.hidden = false;
-    importSummary.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
-  } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = origText;
-  }
-});
-
-// ============================================================================
-// Initialization
-// ============================================================================
-
-(async function init() {
-  const today = new Date().toLocaleDateString("en-CA");  // YYYY-MM-DD in local time
-  $("#anchor").value = today;
-  $("#tx-date").value = today;
-  state.categories = await api("/categories") || {};
-  fillCategories();
-  refresh();
-})();

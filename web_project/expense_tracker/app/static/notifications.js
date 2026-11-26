@@ -3,12 +3,10 @@
  * Handles notification listing, read/unread status, mark all read, filtering
  */
 
-const apiBase = document.body.dataset.guest === "true" ? "/api/guest" : "/api";
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
-
-const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moneyCents = (cents) => money(cents / 100);
+const $ = window.EtUtils.$;
+const $$ = window.EtUtils.$$;
+const apiBase = window.EtUtils.apiBase;
+const escapeHtml = window.EtUtils.escapeHtml;
 
 let currentPage = 1;
 const PER_PAGE = 20;
@@ -18,11 +16,7 @@ function say(el, text, isError = true) {
   if (!el) return;
   el.textContent = text;
   el.hidden = false;
-  if (isError) {
-    el.className = "message error";
-  } else {
-    el.className = "message success";
-  }
+  el.className = isError ? "message error" : "message success";
 }
 
 async function api(path, options = {}) {
@@ -72,20 +66,20 @@ function renderNotification(notif) {
   const icon = getNotificationIcon(notif.type);
   const typeLabel = getNotificationTypeLabel(notif.type);
   const date = formatDate(notif.created_at);
-  const isRead = notif.is_read;
+  const isRead = Boolean(notif.is_read);
 
   return `
     <article class="notification-item ${isRead ? "read" : "unread"}" data-id="${notif.id}">
       <div class="notification-icon" aria-hidden="true">${icon}</div>
       <div class="notification-content">
         <div class="notification-header">
-          <h4 class="notification-title">${notif.title}</h4>
-          <span class="notification-type">${typeLabel}</span>
+          <h4 class="notification-title">${escapeHtml(notif.title)}</h4>
+          <span class="notification-type">${escapeHtml(typeLabel)}</span>
         </div>
-        <p class="notification-message">${notif.message}</p>
+        <p class="notification-message">${escapeHtml(notif.message)}</p>
         <div class="notification-meta">
           <span class="notification-date">${date}</span>
-          ${notif.entity_type ? `<span class="notification-entity">${notif.entity_type}: ${notif.entity_id}</span>` : ""}
+          ${notif.entity_type ? `<span class="notification-entity">${escapeHtml(notif.entity_type)}: ${escapeHtml(notif.entity_id)}</span>` : ""}
         </div>
       </div>
       <div class="notification-actions">
@@ -102,6 +96,7 @@ function renderNotification(notif) {
 
 function updateUnreadCount(count) {
   const badge = $("#notif-badge");
+  if (!badge) return;
   if (count > 0) {
     badge.textContent = count > 99 ? "99+" : count;
     badge.hidden = false;
@@ -134,7 +129,7 @@ function renderPagination(pagination) {
   nextBtn.disabled = !hasNext;
 }
 
-async function loadNotifications(filter = "all", page = 1) {
+async function loadNotifications(filter = currentFilter, page = currentPage) {
   currentFilter = filter;
   currentPage = page;
 
@@ -146,24 +141,25 @@ async function loadNotifications(filter = "all", page = 1) {
     });
     if (isRead !== null) params.set("is_read", isRead);
 
-    const [notifications, unreadCount] = await Promise.all([
+    const [notifResp, unreadResp] = await Promise.all([
       api(`/notifications?${params.toString()}`),
       api("/notifications/unread-count")
     ]);
 
-    if (!notifications) return;
+    if (!notifResp) return;
+
+    const notifications = notifResp.notifications || [];
+    const pagination = notifResp.pagination;
+    const unreadCount = unreadResp?.unread_count ?? unreadResp?.count ?? 0;
 
     const container = $("#notifications-container");
     const empty = $("#notifications-empty");
     const markAllBtn = $("#btn-mark-all-read");
 
-    updateUnreadCount(unreadCount?.count || 0);
+    updateUnreadCount(unreadCount);
 
-    // Show mark all read button only for unread filter
-    if (filter === "unread" && unreadCount?.count > 0) {
-      markAllBtn.hidden = false;
-    } else {
-      markAllBtn.hidden = true;
+    if (markAllBtn) {
+      markAllBtn.hidden = unreadCount <= 0;
     }
 
     if (notifications.length === 0) {
@@ -177,49 +173,25 @@ async function loadNotifications(filter = "all", page = 1) {
     container.hidden = false;
     container.innerHTML = notifications.map(renderNotification).join("");
 
-    // Check if pagination info is available
-    if (notifications.pagination) {
-      renderPagination(notifications.pagination);
+    if (pagination) {
+      renderPagination(pagination);
     } else {
       $("#notifications-pagination").hidden = true;
     }
 
-    attachNotificationEventListeners();
+    attachNotificationItemListeners();
   } catch (err) {
     say($("#notifications-message"), err.message);
   }
 }
 
-function attachNotificationEventListeners() {
-  // Mark read buttons
+function attachNotificationItemListeners() {
   $$(".btn-mark-read").forEach(btn => {
     btn.addEventListener("click", () => markNotificationRead(btn.dataset.id));
   });
 
-  // Delete buttons
   $$(".btn-delete-notif").forEach(btn => {
     btn.addEventListener("click", () => deleteNotification(btn.dataset.id));
-  });
-
-  // Filter tabs
-  $$(".notifications-filter .filter-tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      $$(".notifications-filter .filter-tab").forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      currentPage = 1;
-      loadNotifications(tab.dataset.filter, 1);
-    });
-  });
-
-  // Pagination
-  $("#btn-notif-prev")?.addEventListener("click", () => {
-    if (currentPage > 1) {
-      loadNotifications(currentFilter, currentPage - 1);
-    }
-  });
-
-  $("#btn-notif-next")?.addEventListener("click", () => {
-    loadNotifications(currentFilter, currentPage + 1);
   });
 }
 
@@ -245,21 +217,30 @@ async function markAllRead() {
 
 async function checkNotifications() {
   const btn = $("#btn-check-notifications");
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "Checking...";
+  const originalText = btn ? btn.textContent : "Check Now";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Checking...";
+  }
 
   try {
     const result = await api("/notifications/check", { method: "POST" });
     if (result) {
-      say($("#notifications-message"), "Notifications checked and created", false);
-      loadNotifications(currentFilter, currentPage);
+      const totalCreated =
+        (result.budget_notifications?.length || 0) +
+        (result.recurring_notifications?.length || 0) +
+        (result.subscription_notifications?.length || 0) +
+        (result.goal_notifications?.length || 0);
+      say($("#notifications-message"), `Checked notifications (${totalCreated} new)`, false);
+      loadNotifications(currentFilter, 1);
     }
   } catch (err) {
     say($("#notifications-message"), err.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = originalText;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
   }
 }
 
@@ -275,15 +256,29 @@ async function deleteNotification(notifId) {
   }
 }
 
-// Event Listeners
 document.addEventListener("DOMContentLoaded", () => {
-  // Mark all read
   $("#btn-mark-all-read")?.addEventListener("click", markAllRead);
-
-  // Check notifications
   $("#btn-check-notifications")?.addEventListener("click", checkNotifications);
   $("#btn-check-first")?.addEventListener("click", checkNotifications);
 
-  // Initial load
+  $$(".notifications-filter .filter-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      $$(".notifications-filter .filter-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      currentPage = 1;
+      loadNotifications(tab.dataset.filter, 1);
+    });
+  });
+
+  $("#btn-notif-prev")?.addEventListener("click", () => {
+    if (currentPage > 1) {
+      loadNotifications(currentFilter, currentPage - 1);
+    }
+  });
+
+  $("#btn-notif-next")?.addEventListener("click", () => {
+    loadNotifications(currentFilter, currentPage + 1);
+  });
+
   loadNotifications();
 });

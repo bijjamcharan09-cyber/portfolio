@@ -188,40 +188,10 @@ def create_app(test_config=None):
             total_generated = 0
             for user in users_to_process:
                 uid = user["id"]
-                due = db.get_due_recurring_transactions(uid, process_date)
-                for rt in due:
-                    tx_id = db.generate_recurring_transaction(uid, rt, process_date.isoformat())
-
-                    # Calculate next due date
-                    from datetime import timedelta
-                    next_due = dt_date.fromisoformat(rt["next_due_date"])
-                    if rt["frequency"] == "daily":
-                        next_due = next_due + timedelta(days=1)
-                    elif rt["frequency"] == "weekly":
-                        next_due = next_due + timedelta(weeks=1)
-                    elif rt["frequency"] == "monthly":
-                        if next_due.month == 12:
-                            next_due = next_due.replace(year=next_due.year + 1, month=1)
-                        else:
-                            next_due = next_due.replace(month=next_due.month + 1)
-                    elif rt["frequency"] == "yearly":
-                        next_due = next_due.replace(year=next_due.year + 1)
-
-                    # Check if next_due exceeds end_date
-                    if rt["end_date"] and next_due > dt_date.fromisoformat(rt["end_date"]):
-                        db.update_recurring_transaction(rt["id"], uid, {
-                            "next_due_date": next_due.isoformat(),
-                            "last_generated": process_date.isoformat(),
-                            "is_active": 0
-                        })
-                    else:
-                        db.update_recurring_transaction(rt["id"], uid, {
-                            "next_due_date": next_due.isoformat(),
-                            "last_generated": process_date.isoformat()
-                        })
-
+                generated = db.process_due_recurring_for_user(uid, process_date)
+                for item in generated:
                     total_generated += 1
-                    print(f"  Generated transaction {tx_id} for user {uid} (recurring: {rt['id']})")
+                    print(f"  Generated transaction {item['transaction_id']} for user {uid} (recurring: {item['recurring_id']})")
 
             print(f"Processed recurring transactions for {process_date}: {total_generated} transactions generated.")
 
@@ -306,38 +276,10 @@ def create_app(test_config=None):
             total_generated = 0
             for user in users_to_process:
                 uid = user["id"]
-                due = db.get_due_recurring_transactions(uid, process_date)
-                for rt in due:
-                    tx_id = db.generate_recurring_transaction(uid, rt, process_date.isoformat())
-
-                    from datetime import timedelta
-                    next_due = dt_date.fromisoformat(rt["next_due_date"])
-                    if rt["frequency"] == "daily":
-                        next_due = next_due + timedelta(days=1)
-                    elif rt["frequency"] == "weekly":
-                        next_due = next_due + timedelta(weeks=1)
-                    elif rt["frequency"] == "monthly":
-                        if next_due.month == 12:
-                            next_due = next_due.replace(year=next_due.year + 1, month=1)
-                        else:
-                            next_due = next_due.replace(month=next_due.month + 1)
-                    elif rt["frequency"] == "yearly":
-                        next_due = next_due.replace(year=next_due.year + 1)
-
-                    if rt["end_date"] and next_due > dt_date.fromisoformat(rt["end_date"]):
-                        db.update_recurring_transaction(rt["id"], uid, {
-                            "next_due_date": next_due.isoformat(),
-                            "last_generated": process_date.isoformat(),
-                            "is_active": 0
-                        })
-                    else:
-                        db.update_recurring_transaction(rt["id"], uid, {
-                            "next_due_date": next_due.isoformat(),
-                            "last_generated": process_date.isoformat()
-                        })
-
+                generated = db.process_due_recurring_for_user(uid, process_date)
+                for item in generated:
                     total_generated += 1
-                    print(f"  Generated transaction {tx_id} for user {uid} (recurring: {rt['id']})")
+                    print(f"  Generated transaction {item['transaction_id']} for user {uid} (recurring: {item['recurring_id']})")
 
             print(f"  Recurring transactions generated: {total_generated}")
 
@@ -428,7 +370,7 @@ def create_app(test_config=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
         )
         return response
 
@@ -567,7 +509,11 @@ def _init_logging(app):
     class RequestIdFilter(logging.Filter):
         def filter(self, record):
             if not hasattr(record, "request_id"):
-                record.request_id = getattr(g, "request_id", "-")
+                try:
+                    record.request_id = getattr(g, "request_id", "-")
+                except RuntimeError:
+                    # Outside of request context
+                    record.request_id = "-"
             return True
 
     handler.addFilter(RequestIdFilter())

@@ -984,8 +984,9 @@ def get_budget_utilization():
     """Get budget utilization for all active budgets in the current period."""
     user_id = session.get("user_id")
     start, end = _range()
+    auto_period = "period" not in request.args
 
-    utilizations = db.get_all_budget_utilizations(user_id, start, end)
+    utilizations = db.get_all_budget_utilizations(user_id, start, end, auto_period=auto_period)
     return jsonify(budgets=utilizations)
 
 
@@ -996,8 +997,10 @@ def get_budget_utilization():
 @bp.get("/recurring")
 @login_required
 def list_recurring_transactions():
-    """List all recurring transactions for the authenticated user."""
+    """List all recurring transactions for the authenticated user (auto-processes due items)."""
     user_id = session.get("user_id")
+    # Idempotently process any due recurring transactions for this user
+    db.process_due_recurring_for_user(user_id)
     is_active = request.args.get("is_active", type=int)
     is_paused = request.args.get("is_paused", type=int)
 
@@ -1133,53 +1136,15 @@ def resume_recurring_transaction(rt_id):
 def process_recurring_transactions():
     """Process due recurring transactions and generate actual transactions."""
     user_id = session.get("user_id")
-    today = date.today()
+    generated = db.process_due_recurring_for_user(user_id, date.today())
 
-    due = db.get_due_recurring_transactions(user_id, today)
-    generated = []
-
-    for rt in due:
-        # Generate transaction for today
-        tx_id = db.generate_recurring_transaction(user_id, rt, today.isoformat())
-
-        # Calculate next due date based on frequency
-        from datetime import datetime, timedelta
-        next_due = date.fromisoformat(rt["next_due_date"])
-        if rt["frequency"] == "daily":
-            next_due = next_due + timedelta(days=1)
-        elif rt["frequency"] == "weekly":
-            next_due = next_due + timedelta(weeks=1)
-        elif rt["frequency"] == "monthly":
-            # Add one month
-            if next_due.month == 12:
-                next_due = next_due.replace(year=next_due.year + 1, month=1)
-            else:
-                next_due = next_due.replace(month=next_due.month + 1)
-        elif rt["frequency"] == "yearly":
-            next_due = next_due.replace(year=next_due.year + 1)
-
-        # Check if next_due exceeds end_date
-        if rt["end_date"] and next_due > date.fromisoformat(rt["end_date"]):
-            db.update_recurring_transaction(rt["id"], user_id, {
-                "next_due_date": next_due.isoformat(),
-                "last_generated": today.isoformat(),
-                "is_active": 0
-            })
-        else:
-            db.update_recurring_transaction(rt["id"], user_id, {
-                "next_due_date": next_due.isoformat(),
-                "last_generated": today.isoformat()
-            })
-
-        generated.append({"recurring_id": rt["id"], "transaction_id": tx_id, "next_due_date": next_due.isoformat()})
-
-        # Audit log: recurring transaction generated
+    for item in generated:
         db.audit_log(
             action="recurring_generated",
             entity_type="transaction",
-            entity_id=str(tx_id),
+            entity_id=str(item["transaction_id"]),
             user_id=user_id,
-            metadata={"recurring_id": rt["id"], "frequency": rt["frequency"]}
+            metadata={"recurring_id": item["recurring_id"], "frequency": item["frequency"]}
         )
 
     return jsonify(generated=generated, count=len(generated)), 200
@@ -1436,7 +1401,9 @@ def delete_subscription(sub_id):
 def get_upcoming_subscriptions():
     """Get subscriptions with upcoming renewals."""
     user_id = session.get("user_id")
-    days_ahead = request.args.get("days", 30, type=int)
+    days_ahead = request.args.get("days", type=int)
+    if days_ahead is None:
+        days_ahead = request.args.get("days_ahead", 30, type=int)
 
     upcoming = db.get_upcoming_renewals(user_id, days_ahead)
     return jsonify(subscriptions=[dict(s) for s in upcoming])
@@ -1448,6 +1415,7 @@ def get_subscription_totals():
     """Get monthly and annual subscription totals."""
     user_id = session.get("user_id")
     totals = db.get_subscription_totals(user_id)
+    totals["currency"] = current_app.config.get("BASE_CURRENCY", "INR")
     return jsonify(totals)
 
 
@@ -1559,13 +1527,10 @@ def get_financial_forecast():
     conn = db.get_db()
     today = date.today()
 
-    # Calculate date range
-    if today.month > months:
-        start_month = today.month - months
-        start_year = today.year
-    else:
-        start_month = today.month - months + 12
-        start_year = today.year - 1
+    # Calculate date range safely across multiple years
+    total_months = today.year * 12 + (today.month - 1) - (months - 1)
+    start_year, start_month_zero = divmod(total_months, 12)
+    start_month = start_month_zero + 1
 
     start_date = f"{start_year}-{start_month:02d}-01"
     end_date = today.isoformat()
@@ -1672,6 +1637,15 @@ def get_financial_forecast():
     elif cv_income > 0.3 or cv_expense > 0.3:
         confidence = "medium"
 
+    history = [
+        {
+            "month": m,
+            "income": round(monthly_data[m]["income"], 2),
+            "expense": round(monthly_data[m]["expense"], 2),
+        }
+        for m in sorted_months
+    ]
+
     return jsonify(
         forecast={
             "period": "next_month",
@@ -1681,6 +1655,7 @@ def get_financial_forecast():
             "income_trend": round(income_trend, 2),
             "expense_trend": round(expense_trend, 2),
             "category_forecasts": category_forecasts,
+            "history": history,
             "confidence": confidence,
             "based_on_months": len(sorted_months),
             "data_quality": {

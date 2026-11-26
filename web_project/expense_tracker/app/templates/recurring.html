@@ -56,9 +56,14 @@
   <section class="panel wide" aria-labelledby="recurring-h">
     <div class="panel-header-row">
       <h2 id="recurring-h">Recurring Transactions</h2>
-      <button type="button" id="btn-new-recurring" class="btn-primary">
-        <span class="btn-icon">+</span> New Recurring
-      </button>
+      <div class="panel-header-actions">
+        <button type="button" id="btn-process-recurring" class="btn-outline">
+          Process Due
+        </button>
+        <button type="button" id="btn-new-recurring" class="btn-primary">
+          <span class="btn-icon">+</span> New Recurring
+        </button>
+      </div>
     </div>
 
     <div id="recurring-message" class="message" role="status" hidden></div>

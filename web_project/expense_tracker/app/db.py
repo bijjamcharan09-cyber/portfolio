@@ -75,6 +75,103 @@ SCHEMA_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)",
     "CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id)",
+    # Release 2 tables (idempotent, matches 003_release2_tables.sql)
+    """CREATE TABLE IF NOT EXISTS budgets (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name              TEXT    NOT NULL,
+    period            TEXT    NOT NULL CHECK (period IN ('weekly', 'monthly')),
+    category          TEXT,
+    amount_cents      INTEGER NOT NULL CHECK (amount_cents > 0),
+    warning_threshold INTEGER NOT NULL DEFAULT 80 CHECK (warning_threshold BETWEEN 1 AND 100),
+    start_date        TEXT    NOT NULL,
+    end_date          TEXT,
+    is_active         INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    created_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_budgets_user_id ON budgets(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_budgets_active ON budgets(user_id, is_active)",
+    """CREATE TABLE IF NOT EXISTS recurring_transactions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type           TEXT    NOT NULL CHECK (type IN ('income', 'expense')),
+    amount_cents   INTEGER NOT NULL CHECK (amount_cents > 0),
+    category       TEXT    NOT NULL,
+    note           TEXT    NOT NULL DEFAULT '',
+    payment_method TEXT    NOT NULL DEFAULT '',
+    frequency      TEXT    NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'yearly')),
+    start_date     TEXT    NOT NULL,
+    end_date       TEXT,
+    last_generated TEXT,
+    next_due_date  TEXT    NOT NULL,
+    is_active      INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    is_paused      INTEGER NOT NULL DEFAULT 0 CHECK (is_paused IN (0, 1)),
+    created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_recurring_user_id ON recurring_transactions(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_recurring_next_due ON recurring_transactions(next_due_date)",
+    "CREATE INDEX IF NOT EXISTS idx_recurring_active ON recurring_transactions(user_id, is_active, is_paused)",
+    """CREATE TABLE IF NOT EXISTS financial_goals (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id              INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name                 TEXT    NOT NULL,
+    target_amount_cents  INTEGER NOT NULL CHECK (target_amount_cents > 0),
+    current_amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (current_amount_cents >= 0),
+    target_date          TEXT,
+    description          TEXT    NOT NULL DEFAULT '',
+    is_completed         INTEGER NOT NULL DEFAULT 0 CHECK (is_completed IN (0, 1)),
+    completed_at         TEXT,
+    created_at           TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_goals_user_id ON financial_goals(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_goals_completed ON financial_goals(user_id, is_completed)",
+    """CREATE TABLE IF NOT EXISTS goal_contributions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    goal_id      INTEGER NOT NULL REFERENCES financial_goals(id) ON DELETE CASCADE,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    note         TEXT    NOT NULL DEFAULT '',
+    date         TEXT    NOT NULL,
+    created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_contributions_goal_id ON goal_contributions(goal_id)",
+    "CREATE INDEX IF NOT EXISTS idx_contributions_user_id ON goal_contributions(user_id)",
+    """CREATE TABLE IF NOT EXISTS subscriptions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name              TEXT    NOT NULL,
+    amount_cents      INTEGER NOT NULL CHECK (amount_cents > 0),
+    currency          TEXT    NOT NULL DEFAULT 'INR',
+    billing_cycle     TEXT    NOT NULL CHECK (billing_cycle IN ('monthly', 'quarterly', 'yearly', 'custom')),
+    custom_cycle_days INTEGER,
+    renewal_date      TEXT    NOT NULL,
+    status            TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'cancelled', 'expired')),
+    category          TEXT    NOT NULL DEFAULT 'Subscription',
+    payment_method    TEXT    NOT NULL DEFAULT '',
+    notes             TEXT    NOT NULL DEFAULT '',
+    created_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(user_id, status)",
+    """CREATE TABLE IF NOT EXISTS notifications (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type          TEXT    NOT NULL,
+    title         TEXT    NOT NULL,
+    message       TEXT    NOT NULL,
+    entity_type   TEXT,
+    entity_id     TEXT,
+    is_read       INTEGER NOT NULL DEFAULT 0 CHECK (is_read IN (0, 1)),
+    read_at       TEXT,
+    metadata_json TEXT,
+    created_at    TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+)""",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, is_read)",
 ]
 
 # Backwards compatible full SCHEMA string
@@ -894,6 +991,9 @@ def get_budget_utilization(user_id: int, budget_id: int, start: date, end: date)
         "budget_amount": budget_amount / 100,
         "spent": spent / 100,
         "remaining": (budget_amount - spent) / 100,
+        "budget_amount_cents": budget_amount,
+        "spent_cents": spent,
+        "remaining_cents": budget_amount - spent,
         "utilization_pct": round(utilization_pct, 2),
         "warning_threshold": budget["warning_threshold"],
         "is_warning": utilization_pct >= budget["warning_threshold"],
@@ -901,12 +1001,18 @@ def get_budget_utilization(user_id: int, budget_id: int, start: date, end: date)
     }
 
 
-def get_all_budget_utilizations(user_id: int, start: date, end: date) -> list:
+def get_all_budget_utilizations(user_id: int, start: date, end: date, auto_period: bool = False) -> list:
     """Get utilization for all active budgets in a period."""
+    from datetime import timedelta
     budgets = list_budgets(user_id, is_active=1)
     results = []
+    today = date.today()
     for b in budgets:
-        util = get_budget_utilization(user_id, b["id"], start, end)
+        b_start, b_end = start, end
+        if auto_period and b["period"] == "weekly":
+            b_start = today - timedelta(days=today.weekday())
+            b_end = b_start + timedelta(days=6)
+        util = get_budget_utilization(user_id, b["id"], b_start, b_end)
         if util:
             results.append(util)
     return results
@@ -1034,6 +1140,93 @@ def advance_recurring_transaction(rt_id: int, user_id: int, new_next_due: str, l
     )
     conn.commit()
     return cur.rowcount > 0
+
+
+def process_due_recurring_for_user(user_id: int, process_date: date = None) -> list:
+    """Atomically process all due recurring transactions for a user without duplicates."""
+    from datetime import timedelta
+    if process_date is None:
+        process_date = date.today()
+
+    process_iso = process_date.isoformat()
+    due = get_due_recurring_transactions(user_id, process_date)
+    generated = []
+
+    for rt in due:
+        # Guard against duplicate generation on the same date
+        if rt["last_generated"] == process_iso:
+            continue
+
+        # Calculate next due date based on frequency
+        next_due = date.fromisoformat(rt["next_due_date"])
+        if rt["frequency"] == "daily":
+            next_due = next_due + timedelta(days=1)
+        elif rt["frequency"] == "weekly":
+            next_due = next_due + timedelta(weeks=1)
+        elif rt["frequency"] == "monthly":
+            if next_due.month == 12:
+                next_due = next_due.replace(year=next_due.year + 1, month=1)
+            else:
+                next_due = next_due.replace(month=next_due.month + 1)
+        elif rt["frequency"] == "yearly":
+            next_due = next_due.replace(year=next_due.year + 1)
+
+        # Ensure next_due advances past process_date if it was multiple periods behind
+        while next_due <= process_date:
+            if rt["frequency"] == "daily":
+                next_due = next_due + timedelta(days=1)
+            elif rt["frequency"] == "weekly":
+                next_due = next_due + timedelta(weeks=1)
+            elif rt["frequency"] == "monthly":
+                if next_due.month == 12:
+                    next_due = next_due.replace(year=next_due.year + 1, month=1)
+                else:
+                    next_due = next_due.replace(month=next_due.month + 1)
+            elif rt["frequency"] == "yearly":
+                next_due = next_due.replace(year=next_due.year + 1)
+
+        is_still_active = 0 if (rt["end_date"] and next_due > date.fromisoformat(rt["end_date"])) else 1
+        conn = get_db()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # Re-verify inside lock that another worker didn't already advance this recurring item
+            current_rt = conn.execute(
+                "SELECT next_due_date, last_generated, is_active, is_paused FROM recurring_transactions WHERE id = ? AND user_id = ?",
+                (rt["id"], user_id)
+            ).fetchone()
+            if not current_rt or not current_rt["is_active"] or current_rt["is_paused"]:
+                conn.rollback()
+                continue
+            if current_rt["next_due_date"] > process_iso or current_rt["last_generated"] == process_iso:
+                conn.rollback()
+                continue
+
+            cur = conn.execute(
+                """INSERT INTO transactions (user_id, type, amount_cents, category, note, payment_method, date)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, rt["type"], rt["amount_cents"], rt["category"],
+                 rt["note"] or "", rt["payment_method"] or "", process_iso)
+            )
+            tx_id = cur.lastrowid
+
+            conn.execute(
+                """UPDATE recurring_transactions
+                   SET next_due_date = ?, last_generated = ?, is_active = ?, updated_at = ?
+                   WHERE id = ? AND user_id = ?""",
+                (next_due.isoformat(), process_iso, is_still_active, datetime.now(timezone.utc).isoformat(), rt["id"], user_id)
+            )
+            conn.commit()
+            generated.append({
+                "recurring_id": rt["id"],
+                "transaction_id": tx_id,
+                "next_due_date": next_due.isoformat(),
+                "frequency": rt["frequency"],
+            })
+        except Exception:
+            conn.rollback()
+            raise
+
+    return generated
 
 
 # ============================================================================
@@ -1441,17 +1634,16 @@ def delete_notification(notif_id: int, user_id: int) -> bool:
 
 def check_budget_notifications(user_id: int) -> list:
     """Check budgets and create notifications for warnings/exceeded budgets."""
-    from datetime import date
+    from datetime import date, timedelta
+    import calendar
     today = date.today()
 
-    # Get current month budgets
-    if today.month == 1:
-        start = date(today.year - 1, 12, 1)
-    else:
-        start = date(today.year, today.month - 1, 1)
-    end = date(today.year, today.month, 28)  # Safe end date
+    # Current month range for monthly budgets; auto_period=True handles weekly budgets automatically
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    start = today.replace(day=1)
+    end = today.replace(day=last_day)
 
-    utilizations = get_all_budget_utilizations(user_id, start, end)
+    utilizations = get_all_budget_utilizations(user_id, start, end, auto_period=True)
     notifications = []
 
     for util in utilizations:
