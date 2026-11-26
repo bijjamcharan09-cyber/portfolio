@@ -324,3 +324,47 @@ def admin_dashboard():
     users = db.list_users()
     stats = db.get_platform_stats()
     return render_template("admin.html", user=user, users=users, stats=stats)
+
+
+# Release 2 Feature Routes
+
+@views_bp.get("/budgets")
+@login_required
+def budgets():
+    user = get_current_user()
+    return render_template("budgets.html", base_currency=current_app.config["BASE_CURRENCY"], user=user, is_guest=False)
+
+
+@views_bp.get("/recurring")
+@login_required
+def recurring():
+    user = get_current_user()
+    return render_template("recurring.html", base_currency=current_app.config["BASE_CURRENCY"], user=user, is_guest=False)
+
+
+@views_bp.get("/goals")
+@login_required
+def goals():
+    user = get_current_user()
+    return render_template("goals.html", base_currency=current_app.config["BASE_CURRENCY"], user=user, is_guest=False)
+
+
+@views_bp.get("/subscriptions")
+@login_required
+def subscriptions():
+    user = get_current_user()
+    return render_template("subscriptions.html", base_currency=current_app.config["BASE_CURRENCY"], user=user, is_guest=False)
+
+
+@views_bp.get("/forecast")
+@login_required
+def forecast():
+    user = get_current_user()
+    return render_template("forecast.html", base_currency=current_app.config["BASE_CURRENCY"], user=user, is_guest=False)
+
+
+@views_bp.get("/notifications")
+@login_required
+def notifications():
+    user = get_current_user()
+    return render_template("notifications.html", base_currency=current_app.config["BASE_CURRENCY"], user=user, is_guest=False)

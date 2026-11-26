@@ -1,16 +1,8 @@
-<!doctype html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#1E293B">
-  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-  <title>{% if is_guest %}Guest Demo - {% endif %}Expense Tracker</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% block title %}{% if is_guest %}Guest Demo - {% endif %}Expense Tracker{% endblock %}
 
-<body data-currency="{{ base_currency }}" data-guest="{{ 'true' if is_guest else 'false' }}">
+{% block content %}
   {% if is_guest %}
   <aside class="guest-banner" role="status">
     <div class="guest-banner-left">
@@ -60,6 +52,18 @@
   </header>
 
   <main>
+    <nav class="feature-nav" aria-label="Financial features">
+      <a href="{{ url_for('views.index') }}" class="feature-nav-item active">Dashboard</a>
+      <a href="{{ url_for('views.budgets') }}" class="feature-nav-item">Budgets</a>
+      <a href="{{ url_for('views.recurring') }}" class="feature-nav-item">Recurring</a>
+      <a href="{{ url_for('views.goals') }}" class="feature-nav-item">Goals</a>
+      <a href="{{ url_for('views.subscriptions') }}" class="feature-nav-item">Subscriptions</a>
+      <a href="{{ url_for('views.forecast') }}" class="feature-nav-item">Forecast</a>
+      <a href="{{ url_for('views.notifications') }}" class="feature-nav-item">
+        Notifications
+        <span id="notif-badge" class="notif-badge" hidden>0</span>
+      </a>
+    </nav>
     <section class="panel" aria-labelledby="add-h">
       <h2 id="add-h">Add a transaction</h2>
       <form id="tx-form">
@@ -181,13 +185,4 @@
   </div>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('{{ url_for('static', filename='sw.js') }}').catch(()=>{});
-      });
-    }
-  </script>
-</body>
-
-</html>
+{% endblock %}

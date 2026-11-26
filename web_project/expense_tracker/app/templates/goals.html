@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Financial Goals - Expense Tracker{% endblock %}
+
+{% block content %}
+<header>
+  <div class="brand-wrap">
+    <h1>Expense Tracker</h1>
+  </div>
+  <div class="header-right">
+    <p id="balance-line">Balance <strong id="balance">0.00</strong> {{ base_currency }}</p>
+    {% if is_guest %}
+    <nav class="user-nav">
+      <span class="user-pill guest-pill">
+        <span class="user-avatar guest-avatar">G</span>
+        <span class="user-name">Guest Explorer</span>
+        <span class="badge badge-guest">Demo</span>
+      </span>
+      <a href="{{ url_for('views.register') }}" class="nav-btn nav-btn-primary">Create Free Account</a>
+      <a href="{{ url_for('views.exit_guest') }}" class="nav-btn nav-btn-outline">Exit</a>
+    </nav>
+    {% elif current_user %}
+    <nav class="user-nav">
+      <span class="user-pill">
+        <span class="user-avatar">{{ current_user.full_name[:1] | upper }}</span>
+        <span class="user-name">{{ current_user.full_name }}</span>
+        {% if current_user.role == 'admin' %}
+        <span class="badge badge-admin">Admin</span>
+        {% endif %}
+      </span>
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('views.admin_dashboard') }}" class="nav-btn">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('views.index') }}" class="nav-btn">Dashboard</a>
+      <a href="{{ url_for('views.profile') }}" class="nav-btn">Profile</a>
+      <a href="{{ url_for('views.logout') }}" class="nav-btn nav-btn-outline">Logout</a>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+
+<main>
+  <nav class="feature-nav" aria-label="Financial features">
+    <a href="{{ url_for('views.index') }}" class="feature-nav-item">Dashboard</a>
+    <a href="{{ url_for('views.budgets') }}" class="feature-nav-item">Budgets</a>
+    <a href="{{ url_for('views.recurring') }}" class="feature-nav-item">Recurring</a>
+    <a href="{{ url_for('views.goals') }}" class="feature-nav-item active">Goals</a>
+    <a href="{{ url_for('views.subscriptions') }}" class="feature-nav-item">Subscriptions</a>
+    <a href="{{ url_for('views.forecast') }}" class="feature-nav-item">Forecast</a>
+    <a href="{{ url_for('views.notifications') }}" class="feature-nav-item">
+      Notifications
+      <span id="notif-badge" class="notif-badge" hidden>0</span>
+    </a>
+  </nav>
+
+  <section class="panel wide" aria-labelledby="goals-h">
+    <div class="panel-header-row">
+      <h2 id="goals-h">Financial Goals</h2>
+      <button type="button" id="btn-new-goal" class="btn-primary">
+        <span class="btn-icon">+</span> New Goal
+      </button>
+    </div>
+
+    <div id="goals-message" class="message" role="status" hidden></div>
+
+    <!-- Goals Overview -->
+    <div id="goals-overview" class="goals-overview" hidden>
+      <div class="goal-stat">
+        <span class="goal-stat-label">Total Target</span>
+        <span class="goal-stat-value" id="total-target">0.00</span>
+      </div>
+      <div class="goal-stat">
+        <span class="goal-stat-label">Total Saved</span>
+        <span class="goal-stat-value income" id="total-saved">0.00</span>
+      </div>
+      <div class="goal-stat">
+        <span class="goal-stat-label">Overall Progress</span>
+        <span class="goal-stat-value" id="overall-progress">0%</span>
+      </div>
+      <div class="goal-stat">
+        <span class="goal-stat-label">Active Goals</span>
+        <span class="goal-stat-value" id="active-goals-count">0</span>
+      </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="goals-filter">
+      <button class="filter-tab active" data-filter="active">Active</button>
+      <button class="filter-tab" data-filter="completed">Completed</button>
+      <button class="filter-tab" data-filter="all">All</button>
+    </div>
+
+    <!-- Goals List -->
+    <div id="goals-list">
+      <div id="goals-empty" class="empty-state" hidden>
+        <div class="empty-icon">🎯</div>
+        <h3>No financial goals yet</h3>
+        <p>Set savings targets for emergencies, vacations, big purchases, or investments</p>
+        <button type="button" class="btn-primary" id="btn-first-goal">Create Goal</button>
+      </div>
+      <div id="goals-container" hidden></div>
+    </div>
+  </section>
+</main>
+
+<!-- Goal Modal -->
+<div id="goal-modal" class="modal" hidden role="dialog" aria-labelledby="goal-modal-title" aria-modal="true">
+  <div class="modal-backdrop" id="goal-modal-backdrop"></div>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-header">
+      <h3 id="goal-modal-title">Create Goal</h3>
+      <button type="button" class="btn-close" id="btn-close-goal-modal" aria-label="Close dialog">&times;</button>
+    </div>
+    <form id="goal-form">
+      <input type="hidden" name="goal_id" id="goal-id">
+      <div class="modal-body">
+        <div class="form-row">
+          <label>
+            Goal Name <span class="required">*</span>
+            <input type="text" name="name" id="goal-name" placeholder="e.g., Emergency Fund, Vacation, New Car" required maxlength="100">
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Target Amount <span class="required">*</span>
+            <input type="number" name="target_amount_cents" id="goal-target" placeholder="0.00" step="0.01" min="0.01" required>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Current Amount (optional)
+            <input type="number" name="current_amount_cents" id="goal-current" placeholder="0.00" step="0.01" min="0" value="0">
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Target Date (optional)
+            <input type="date" name="target_date" id="goal-target-date">
+            <span class="form-hint">Set a deadline to track progress</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Description
+            <textarea name="description" id="goal-description" rows="3" placeholder="Optional details about this goal" maxlength="500"></textarea>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-outline" id="btn-cancel-goal">Cancel</button>
+        <button type="submit" class="btn-primary" id="btn-submit-goal">Create Goal</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Goal Detail Modal -->
+<div id="goal-detail-modal" class="modal" hidden role="dialog" aria-labelledby="goal-detail-title" aria-modal="true">
+  <div class="modal-backdrop" id="goal-detail-backdrop"></div>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-header">
+      <h3 id="goal-detail-title">Goal Details</h3>
+      <button type="button" class="btn-close" id="btn-close-goal-detail" aria-label="Close dialog">&times;</button>
+    </div>
+    <div class="modal-body" id="goal-detail-body">
+      <!-- Filled dynamically -->
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-primary" id="btn-close-goal-detail-footer">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Contribution Modal -->
+<div id="contribution-modal" class="modal" hidden role="dialog" aria-labelledby="contribution-modal-title" aria-modal="true">
+  <div class="modal-backdrop" id="contribution-modal-backdrop"></div>
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 id="contribution-modal-title">Add Contribution</h3>
+      <button type="button" class="btn-close" id="btn-close-contribution-modal" aria-label="Close dialog">&times;</button>
+    </div>
+    <form id="contribution-form">
+      <input type="hidden" name="goal_id" id="contribution-goal-id">
+      <div class="modal-body">
+        <div class="form-row">
+          <label>
+            Amount <span class="required">*</span>
+            <input type="number" name="amount_cents" id="contribution-amount" placeholder="0.00" step="0.01" min="0.01" required>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Note
+            <input type="text" name="note" id="contribution-note" placeholder="Optional note" maxlength="200">
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Date <span class="required">*</span>
+            <input type="date" name="date" id="contribution-date" required>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-outline" id="btn-cancel-contribution">Cancel</button>
+        <button type="submit" class="btn-primary" id="btn-submit-contribution">Add Contribution</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='goals.js') }}"></script>
+{% endblock %}

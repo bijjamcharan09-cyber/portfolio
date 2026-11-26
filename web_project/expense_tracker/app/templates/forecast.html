@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Financial Forecast - Expense Tracker{% endblock %}
+
+{% block content %}
+<header>
+  <div class="brand-wrap">
+    <h1>Expense Tracker</h1>
+  </div>
+  <div class="header-right">
+    <p id="balance-line">Balance <strong id="balance">0.00</strong> {{ base_currency }}</p>
+    {% if is_guest %}
+    <nav class="user-nav">
+      <span class="user-pill guest-pill">
+        <span class="user-avatar guest-avatar">G</span>
+        <span class="user-name">Guest Explorer</span>
+        <span class="badge badge-guest">Demo</span>
+      </span>
+      <a href="{{ url_for('views.register') }}" class="nav-btn nav-btn-primary">Create Free Account</a>
+      <a href="{{ url_for('views.exit_guest') }}" class="nav-btn nav-btn-outline">Exit</a>
+    </nav>
+    {% elif current_user %}
+    <nav class="user-nav">
+      <span class="user-pill">
+        <span class="user-avatar">{{ current_user.full_name[:1] | upper }}</span>
+        <span class="user-name">{{ current_user.full_name }}</span>
+        {% if current_user.role == 'admin' %}
+        <span class="badge badge-admin">Admin</span>
+        {% endif %}
+      </span>
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('views.admin_dashboard') }}" class="nav-btn">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('views.index') }}" class="nav-btn">Dashboard</a>
+      <a href="{{ url_for('views.profile') }}" class="nav-btn">Profile</a>
+      <a href="{{ url_for('views.logout') }}" class="nav-btn nav-btn-outline">Logout</a>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+
+<main>
+  <nav class="feature-nav" aria-label="Financial features">
+    <a href="{{ url_for('views.index') }}" class="feature-nav-item">Dashboard</a>
+    <a href="{{ url_for('views.budgets') }}" class="feature-nav-item">Budgets</a>
+    <a href="{{ url_for('views.recurring') }}" class="feature-nav-item">Recurring</a>
+    <a href="{{ url_for('views.goals') }}" class="feature-nav-item">Goals</a>
+    <a href="{{ url_for('views.subscriptions') }}" class="feature-nav-item">Subscriptions</a>
+    <a href="{{ url_for('views.forecast') }}" class="feature-nav-item active">Forecast</a>
+    <a href="{{ url_for('views.notifications') }}" class="feature-nav-item">
+      Notifications
+      <span id="notif-badge" class="notif-badge" hidden>0</span>
+    </a>
+  </nav>
+
+  <section class="panel wide" aria-labelledby="forecast-h">
+    <div class="panel-header-row">
+      <h2 id="forecast-h">Financial Forecast</h2>
+      <div class="forecast-controls">
+        <label>
+          History (months)
+          <select id="forecast-months">
+            <option value="3">3 months</option>
+            <option value="6" selected>6 months</option>
+            <option value="12">12 months</option>
+            <option value="24">24 months</option>
+          </select>
+        </label>
+        <button type="button" id="btn-refresh-forecast" class="btn-primary">
+          <span class="btn-icon">↻</span> Refresh
+        </button>
+      </div>
+    </div>
+
+    <div id="forecast-message" class="message" role="status" hidden></div>
+
+    <!-- Forecast State: Insufficient Data -->
+    <div id="forecast-insufficient" class="forecast-state" hidden>
+      <div class="empty-icon">📈</div>
+      <h3>Insufficient Data for Forecasting</h3>
+      <p>We need at least 2 months of transaction history to generate a reliable forecast.</p>
+      <p class="text-muted">Keep tracking your income and expenses to unlock forecasting.</p>
+    </div>
+
+    <!-- Forecast State: Loading -->
+    <div id="forecast-loading" class="forecast-state" hidden>
+      <div class="spinner"></div>
+      <p>Analyzing your spending patterns...</p>
+    </div>
+
+    <!-- Forecast Results -->
+    <div id="forecast-results" hidden>
+      <!-- Summary Cards -->
+      <div class="forecast-summary">
+        <div class="forecast-card income">
+          <div class="forecast-card-header">
+            <span class="forecast-card-label">Predicted Income</span>
+            <span class="confidence-badge" id="income-confidence">High</span>
+          </div>
+          <div class="forecast-card-value" id="predicted-income">0.00</div>
+          <div class="forecast-card-trend" id="income-trend">
+            <span class="trend-icon"></span>
+            <span class="trend-text"></span>
+          </div>
+        </div>
+        <div class="forecast-card expense">
+          <div class="forecast-card-header">
+            <span class="forecast-card-label">Predicted Expenses</span>
+            <span class="confidence-badge" id="expense-confidence">High</span>
+          </div>
+          <div class="forecast-card-value" id="predicted-expense">0.00</div>
+          <div class="forecast-card-trend" id="expense-trend">
+            <span class="trend-icon"></span>
+            <span class="trend-text"></span>
+          </div>
+        </div>
+        <div class="forecast-card savings">
+          <div class="forecast-card-header">
+            <span class="forecast-card-label">Predicted Savings</span>
+          </div>
+          <div class="forecast-card-value" id="predicted-savings">0.00</div>
+          <div class="forecast-card-trend">Next month projection</div>
+        </div>
+      </div>
+
+      <!-- Category Forecasts -->
+      <div class="forecast-section">
+        <h3>Category Forecasts</h3>
+        <div id="category-forecasts" class="category-forecasts">
+          <!-- Filled dynamically -->
+        </div>
+        <p id="no-category-forecasts" class="text-muted" hidden>No category-specific forecasts available</p>
+      </div>
+
+      <!-- Disclaimer -->
+      <div class="forecast-disclaimer">
+        <span class="disclaimer-icon">⚠️</span>
+        <p id="forecast-disclaimer-text">Forecasts are estimates based on historical data and simple statistical methods. They are not guaranteed financial outcomes.</p>
+      </div>
+
+      <!-- Data Quality Info -->
+      <details class="forecast-details">
+        <summary>Forecast Details & Methodology</summary>
+        <div class="forecast-methodology">
+          <div class="methodology-item">
+            <strong>Method:</strong> Simple Moving Average (3 months) with Linear Trend
+          </div>
+          <div class="methodology-item">
+            <strong>Data Points:</strong> <span id="data-points">0</span> months
+          </div>
+          <div class="methodology-item">
+            <strong>Income Variability (CV):</strong> <span id="income-cv">0%</span>
+          </div>
+          <div class="methodology-item">
+            <strong>Expense Variability (CV):</strong> <span id="expense-cv">0%</span>
+          </div>
+          <div class="methodology-item">
+            <strong>Overall Confidence:</strong> <span id="overall-confidence">High</span>
+          </div>
+        </div>
+      </details>
+    </div>
+  </section>
+</main>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='forecast.js') }}"></script>
+{% endblock %}

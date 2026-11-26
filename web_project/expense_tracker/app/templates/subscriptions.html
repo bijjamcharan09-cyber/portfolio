@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Subscriptions - Expense Tracker{% endblock %}
+
+{% block content %}
+<header>
+  <div class="brand-wrap">
+    <h1>Expense Tracker</h1>
+  </div>
+  <div class="header-right">
+    <p id="balance-line">Balance <strong id="balance">0.00</strong> {{ base_currency }}</p>
+    {% if is_guest %}
+    <nav class="user-nav">
+      <span class="user-pill guest-pill">
+        <span class="user-avatar guest-avatar">G</span>
+        <span class="user-name">Guest Explorer</span>
+        <span class="badge badge-guest">Demo</span>
+      </span>
+      <a href="{{ url_for('views.register') }}" class="nav-btn nav-btn-primary">Create Free Account</a>
+      <a href="{{ url_for('views.exit_guest') }}" class="nav-btn nav-btn-outline">Exit</a>
+    </nav>
+    {% elif current_user %}
+    <nav class="user-nav">
+      <span class="user-pill">
+        <span class="user-avatar">{{ current_user.full_name[:1] | upper }}</span>
+        <span class="user-name">{{ current_user.full_name }}</span>
+        {% if current_user.role == 'admin' %}
+        <span class="badge badge-admin">Admin</span>
+        {% endif %}
+      </span>
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('views.admin_dashboard') }}" class="nav-btn">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('views.index') }}" class="nav-btn">Dashboard</a>
+      <a href="{{ url_for('views.profile') }}" class="nav-btn">Profile</a>
+      <a href="{{ url_for('views.logout') }}" class="nav-btn nav-btn-outline">Logout</a>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+
+<main>
+  <nav class="feature-nav" aria-label="Financial features">
+    <a href="{{ url_for('views.index') }}" class="feature-nav-item">Dashboard</a>
+    <a href="{{ url_for('views.budgets') }}" class="feature-nav-item">Budgets</a>
+    <a href="{{ url_for('views.recurring') }}" class="feature-nav-item">Recurring</a>
+    <a href="{{ url_for('views.goals') }}" class="feature-nav-item">Goals</a>
+    <a href="{{ url_for('views.subscriptions') }}" class="feature-nav-item active">Subscriptions</a>
+    <a href="{{ url_for('views.forecast') }}" class="feature-nav-item">Forecast</a>
+    <a href="{{ url_for('views.notifications') }}" class="feature-nav-item">
+      Notifications
+      <span id="notif-badge" class="notif-badge" hidden>0</span>
+    </a>
+  </nav>
+
+  <section class="panel wide" aria-labelledby="subscriptions-h">
+    <div class="panel-header-row">
+      <h2 id="subscriptions-h">Subscription Manager</h2>
+      <button type="button" id="btn-new-subscription" class="btn-primary">
+        <span class="btn-icon">+</span> Add Subscription
+      </button>
+    </div>
+
+    <div id="subscriptions-message" class="message" role="status" hidden></div>
+
+    <!-- Subscription Totals -->
+    <div id="subscription-totals" class="subscription-totals" hidden>
+      <div class="sub-total-card">
+        <span class="sub-total-label">Monthly Total</span>
+        <span class="sub-total-value" id="monthly-total">0.00</span>
+      </div>
+      <div class="sub-total-card">
+        <span class="sub-total-label">Annual Total</span>
+        <span class="sub-total-value" id="annual-total">0.00</span>
+      </div>
+      <div class="sub-total-card">
+        <span class="sub-total-label">Active Subscriptions</span>
+        <span class="sub-total-value" id="active-sub-count">0</span>
+      </div>
+    </div>
+
+    <!-- Upcoming Renewals -->
+    <div id="upcoming-renewals" class="upcoming-renewals" hidden>
+      <h3>Upcoming Renewals (Next 30 Days)</h3>
+      <div id="renewals-container" class="renewals-list"></div>
+      <div id="renewals-empty" class="empty-state-small" hidden>
+        No upcoming renewals in the next 30 days
+      </div>
+    </div>
+
+    <!-- Subscriptions List -->
+    <div id="subscriptions-list">
+      <div class="subscriptions-filter">
+        <button class="filter-tab active" data-status="active">Active</button>
+        <button class="filter-tab" data-status="paused">Paused</button>
+        <button class="filter-tab" data-status="cancelled">Cancelled</button>
+        <button class="filter-tab" data-status="all">All</button>
+      </div>
+
+      <div id="subscriptions-empty" class="empty-state" hidden>
+        <div class="empty-icon">📱</div>
+        <h3>No subscriptions yet</h3>
+        <p>Track your recurring subscriptions - streaming, software, gym, etc.</p>
+        <button type="button" class="btn-primary" id="btn-first-subscription">Add Subscription</button>
+      </div>
+      <div id="subscriptions-container" hidden></div>
+    </div>
+  </section>
+</main>
+
+<!-- Subscription Modal -->
+<div id="subscription-modal" class="modal" hidden role="dialog" aria-labelledby="subscription-modal-title" aria-modal="true">
+  <div class="modal-backdrop" id="subscription-modal-backdrop"></div>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-header">
+      <h3 id="subscription-modal-title">Add Subscription</h3>
+      <button type="button" class="btn-close" id="btn-close-subscription-modal" aria-label="Close dialog">&times;</button>
+    </div>
+    <form id="subscription-form">
+      <input type="hidden" name="subscription_id" id="subscription-id">
+      <div class="modal-body">
+        <div class="form-row">
+          <label>
+            Name <span class="required">*</span>
+            <input type="text" name="name" id="sub-name" placeholder="e.g., Netflix, Spotify, Gym" required maxlength="100">
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Amount <span class="required">*</span>
+            <div class="input-with-currency">
+              <input type="number" name="amount_cents" id="sub-amount" placeholder="0.00" step="0.01" min="0.01" required>
+              <select name="currency" id="sub-currency">
+                <option value="INR">INR (₹)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+              </select>
+            </div>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Billing Cycle <span class="required">*</span>
+            <select name="billing_cycle" id="sub-cycle" required>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row" id="custom-cycle-row" hidden>
+          <label>
+            Custom Cycle (days)
+            <input type="number" name="custom_cycle_days" id="sub-custom-days" min="1" max="365" placeholder="e.g., 45">
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Renewal Date <span class="required">*</span>
+            <input type="date" name="renewal_date" id="sub-renewal" required>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Category
+            <select name="category" id="sub-category">
+              <option value="Subscription">Subscription</option>
+              <option value="Entertainment">Entertainment</option>
+              <option value="Productivity">Productivity</option>
+              <option value="Health & Fitness">Health & Fitness</option>
+              <option value="Education">Education</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Payment Method
+            <select name="payment_method" id="sub-payment">
+              <option value="">Select...</option>
+              <option value="Credit Card">Credit Card</option>
+              <option value="Debit Card">Debit Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Digital Wallet">Digital Wallet</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Notes
+            <textarea name="notes" id="sub-notes" rows="2" placeholder="Optional notes" maxlength="500"></textarea>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-outline" id="btn-cancel-subscription">Cancel</button>
+        <button type="submit" class="btn-primary" id="btn-submit-subscription">Add Subscription</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='subscriptions.js') }}"></script>
+{% endblock %}

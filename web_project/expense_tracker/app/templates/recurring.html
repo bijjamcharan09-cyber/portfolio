@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Recurring Transactions - Expense Tracker{% endblock %}
+
+{% block content %}
+<header>
+  <div class="brand-wrap">
+    <h1>Expense Tracker</h1>
+  </div>
+  <div class="header-right">
+    <p id="balance-line">Balance <strong id="balance">0.00</strong> {{ base_currency }}</p>
+    {% if is_guest %}
+    <nav class="user-nav">
+      <span class="user-pill guest-pill">
+        <span class="user-avatar guest-avatar">G</span>
+        <span class="user-name">Guest Explorer</span>
+        <span class="badge badge-guest">Demo</span>
+      </span>
+      <a href="{{ url_for('views.register') }}" class="nav-btn nav-btn-primary">Create Free Account</a>
+      <a href="{{ url_for('views.exit_guest') }}" class="nav-btn nav-btn-outline">Exit</a>
+    </nav>
+    {% elif current_user %}
+    <nav class="user-nav">
+      <span class="user-pill">
+        <span class="user-avatar">{{ current_user.full_name[:1] | upper }}</span>
+        <span class="user-name">{{ current_user.full_name }}</span>
+        {% if current_user.role == 'admin' %}
+        <span class="badge badge-admin">Admin</span>
+        {% endif %}
+      </span>
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('views.admin_dashboard') }}" class="nav-btn">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('views.index') }}" class="nav-btn">Dashboard</a>
+      <a href="{{ url_for('views.profile') }}" class="nav-btn">Profile</a>
+      <a href="{{ url_for('views.logout') }}" class="nav-btn nav-btn-outline">Logout</a>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+
+<main>
+  <nav class="feature-nav" aria-label="Financial features">
+    <a href="{{ url_for('views.index') }}" class="feature-nav-item">Dashboard</a>
+    <a href="{{ url_for('views.budgets') }}" class="feature-nav-item">Budgets</a>
+    <a href="{{ url_for('views.recurring') }}" class="feature-nav-item active">Recurring</a>
+    <a href="{{ url_for('views.goals') }}" class="feature-nav-item">Goals</a>
+    <a href="{{ url_for('views.subscriptions') }}" class="feature-nav-item">Subscriptions</a>
+    <a href="{{ url_for('views.forecast') }}" class="feature-nav-item">Forecast</a>
+    <a href="{{ url_for('views.notifications') }}" class="feature-nav-item">
+      Notifications
+      <span id="notif-badge" class="notif-badge" hidden>0</span>
+    </a>
+  </nav>
+
+  <section class="panel wide" aria-labelledby="recurring-h">
+    <div class="panel-header-row">
+      <h2 id="recurring-h">Recurring Transactions</h2>
+      <button type="button" id="btn-new-recurring" class="btn-primary">
+        <span class="btn-icon">+</span> New Recurring
+      </button>
+    </div>
+
+    <div id="recurring-message" class="message" role="status" hidden></div>
+
+    <!-- Recurring List -->
+    <div id="recurring-list">
+      <div id="recurring-empty" class="empty-state" hidden>
+        <div class="empty-icon">🔄</div>
+        <h3>No recurring transactions yet</h3>
+        <p>Set up automatic transactions for subscriptions, rent, salary, etc.</p>
+        <button type="button" class="btn-primary" id="btn-first-recurring">Add Recurring Transaction</button>
+      </div>
+      <div id="recurring-container" hidden></div>
+    </div>
+  </section>
+</main>
+
+<!-- Recurring Modal -->
+<div id="recurring-modal" class="modal" hidden role="dialog" aria-labelledby="recurring-modal-title" aria-modal="true">
+  <div class="modal-backdrop" id="recurring-modal-backdrop"></div>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-header">
+      <h3 id="recurring-modal-title">Create Recurring Transaction</h3>
+      <button type="button" class="btn-close" id="btn-close-recurring-modal" aria-label="Close dialog">&times;</button>
+    </div>
+    <form id="recurring-form">
+      <input type="hidden" name="recurring_id" id="recurring-id">
+      <div class="modal-body">
+        <div class="form-row">
+          <label>
+            Type <span class="required">*</span>
+            <select name="type" id="recurring-type" required>
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Amount <span class="required">*</span>
+            <input type="number" name="amount_cents" id="recurring-amount" placeholder="0.00" step="0.01" min="0.01" required>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Category <span class="required">*</span>
+            <select name="category" id="recurring-category" required>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Frequency <span class="required">*</span>
+            <select name="frequency" id="recurring-frequency" required>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly" selected>Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Note
+            <input type="text" name="note" id="recurring-note" placeholder="Optional description" maxlength="200">
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Payment Method
+            <select name="payment_method" id="recurring-payment">
+              <option value="">Select...</option>
+              <option value="Credit Card">Credit Card</option>
+              <option value="Debit Card">Debit Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Cash">Cash</option>
+              <option value="Digital Wallet">Digital Wallet</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Start Date <span class="required">*</span>
+            <input type="date" name="start_date" id="recurring-start" required>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            End Date (optional)
+            <input type="date" name="end_date" id="recurring-end">
+            <span class="form-hint">Leave blank for no end date</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-outline" id="btn-cancel-recurring">Cancel</button>
+        <button type="submit" class="btn-primary" id="btn-submit-recurring">Create Recurring</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='recurring.js') }}"></script>
+{% endblock %}
