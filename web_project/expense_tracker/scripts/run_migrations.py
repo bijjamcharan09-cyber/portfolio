@@ -140,7 +140,7 @@ def _record_migration(conn, migration: dict, success: bool = True):
     """Record migration in tracking table."""
     if success:
         conn.execute(
-            "INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO schema_migrations (version, name, checksum, applied_at, rolled_back) VALUES (?, ?, ?, ?, 0)",
             (migration["version"], migration["name"], migration["checksum"], datetime.now(timezone.utc).isoformat())
         )
     else:

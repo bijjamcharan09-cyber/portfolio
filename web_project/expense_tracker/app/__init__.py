@@ -182,13 +182,20 @@ def create_app(test_config=None):
             msg = msg.replace(token, "[REDACTED]")
 
         # Log the full error with context
+        user_id = None
+        if hasattr(g, "current_user") and g.current_user:
+            try:
+                user_id = g.current_user["id"]
+            except (TypeError, KeyError):
+                user_id = None
+
         app.logger.error(
             "Unhandled exception: %s",
             msg,
             extra={
                 "path": request.path,
                 "method": request.method,
-                "user_id": getattr(g, "current_user", {}).get("id") if hasattr(g, "current_user") else None,
+                "user_id": user_id,
                 "request_id": getattr(g, "request_id", None),
             },
             exc_info=True
@@ -312,7 +319,10 @@ def _init_logging(app):
                 if hasattr(g, "request_id"):
                     log_obj["request_id"] = g.request_id
                 if hasattr(g, "current_user") and g.current_user:
-                    log_obj["user_id"] = g.current_user.get("id")
+                    try:
+                        log_obj["user_id"] = g.current_user["id"]
+                    except (TypeError, KeyError):
+                        log_obj["user_id"] = None
                 # Add extra fields from record
                 for key, value in record.__dict__.items():
                     if key not in ["name", "msg", "args", "levelname", "levelno", "pathname",

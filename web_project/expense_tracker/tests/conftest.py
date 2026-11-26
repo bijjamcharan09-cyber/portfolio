@@ -9,6 +9,10 @@ def app_instance(tmp_path):
     """Create a configured testing application instance with standard and admin accounts."""
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "test.db")})
     with app.app_context():
+        # Run migrations to create all tables including Release 2 tables
+        from scripts.run_migrations import run_migrations
+        run_migrations(database_mode="sqlite", database_path=str(tmp_path / "test.db"))
+
         p_hash = hash_password("Password123!")
         db.create_user("Test User", "test@example.com", p_hash, role="user", is_active=1)
         db.create_user("Admin User", "admin@example.com", p_hash, role="admin", is_active=1)
@@ -47,3 +51,20 @@ def admin_client(app_instance):
 def unauth_client(app_instance):
     """An unauthenticated test client with no active session."""
     return app_instance.test_client()
+
+
+@pytest.fixture
+def other_client(app_instance):
+    """A test client authenticated as a second standard user."""
+    test_client = app_instance.test_client()
+    with app_instance.app_context():
+        from app.auth import hash_password
+        p_hash = hash_password("Password123!")
+        db.create_user("Other User", "other@example.com", p_hash, role="user", is_active=1)
+        user = db.get_user_by_email("other@example.com")
+    with test_client.session_transaction() as sess:
+        sess["user_id"] = user["id"]
+        sess["user_name"] = user["full_name"]
+        sess["user_email"] = user["email"]
+        sess["user_role"] = user["role"]
+    return test_client

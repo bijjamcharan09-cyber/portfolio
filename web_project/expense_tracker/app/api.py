@@ -34,6 +34,11 @@ from .validators import (
     validate_profile_update,
     validate_registration,
     validate_transaction,
+    validate_budget,
+    validate_recurring_transaction,
+    validate_financial_goal,
+    validate_goal_contribution,
+    validate_subscription,
 )
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -874,4 +879,815 @@ def guest_import_excel():
         "rejected_count": parsed["rejected_count"],
         "errors": parsed["errors"],
     }), 200
+
+
+# ============================================================================
+# Budget Endpoints (User-Isolated)
+# ============================================================================
+
+@bp.get("/budgets")
+@login_required
+def list_budgets():
+    """List all budgets for the authenticated user."""
+    user_id = session.get("user_id")
+    is_active = request.args.get("is_active", type=int)
+    period = request.args.get("period", type=str)
+
+    budgets = db.list_budgets(user_id, is_active=is_active, period=period)
+    return jsonify(budgets=[dict(b) for b in budgets])
+
+
+@bp.post("/budgets")
+@login_required
+def create_budget():
+    """Create a new budget for the authenticated user."""
+    data = validate_budget(request.get_json(silent=True))
+    user_id = session.get("user_id")
+    new_id = db.add_budget(user_id, data)
+    budget = db.get_budget(new_id, user_id)
+    # Audit log: budget create
+    db.audit_log(
+        action="budget_create",
+        entity_type="budget",
+        entity_id=str(new_id),
+        user_id=user_id,
+        metadata={"name": data["name"], "period": data["period"], "amount_cents": data["amount_cents"]}
+    )
+    return jsonify(dict(budget)), 201
+
+
+@bp.get("/budgets/<int:budget_id>")
+@login_required
+def get_budget(budget_id):
+    """Retrieve a single budget ensuring user ownership."""
+    user_id = session.get("user_id")
+    budget = db.get_budget(budget_id, user_id)
+    if not budget:
+        return jsonify(error="budget not found"), 404
+    return jsonify(dict(budget))
+
+
+@bp.put("/budgets/<int:budget_id>")
+@login_required
+def update_budget(budget_id):
+    """Update an existing budget ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_budget(budget_id, user_id)
+    if not existing:
+        return jsonify(error="budget not found"), 404
+
+    data = validate_budget(request.get_json(silent=True))
+    # Capture old values for audit log
+    old_data = dict(existing)
+    db.update_budget(budget_id, user_id, data)
+    updated = db.get_budget(budget_id, user_id)
+    # Audit log: budget update
+    db.audit_log(
+        action="budget_update",
+        entity_type="budget",
+        entity_id=str(budget_id),
+        user_id=user_id,
+        metadata={"old": old_data, "new": dict(updated)}
+    )
+    return jsonify(dict(updated)), 200
+
+
+@bp.delete("/budgets/<int:budget_id>")
+@login_required
+def delete_budget(budget_id):
+    """Delete a budget ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_budget(budget_id, user_id)
+    if not existing:
+        return jsonify(error="budget not found"), 404
+
+    # Capture data for audit log before deletion
+    deleted_data = dict(existing)
+
+    if not db.delete_budget(budget_id, user_id):
+        return jsonify(error="budget not found"), 404
+
+    # Audit log: budget delete
+    db.audit_log(
+        action="budget_delete",
+        entity_type="budget",
+        entity_id=str(budget_id),
+        user_id=user_id,
+        metadata=deleted_data
+    )
+    return "", 204
+
+
+@bp.get("/budgets/utilization")
+@login_required
+def get_budget_utilization():
+    """Get budget utilization for all active budgets in the current period."""
+    user_id = session.get("user_id")
+    start, end = _range()
+
+    utilizations = db.get_all_budget_utilizations(user_id, start, end)
+    return jsonify(budgets=utilizations)
+
+
+# ============================================================================
+# Recurring Transaction Endpoints (User-Isolated)
+# ============================================================================
+
+@bp.get("/recurring")
+@login_required
+def list_recurring_transactions():
+    """List all recurring transactions for the authenticated user."""
+    user_id = session.get("user_id")
+    is_active = request.args.get("is_active", type=int)
+    is_paused = request.args.get("is_paused", type=int)
+
+    recurring = db.list_recurring_transactions(user_id, is_active=is_active, is_paused=is_paused)
+    return jsonify(recurring=[dict(r) for r in recurring])
+
+
+@bp.post("/recurring")
+@login_required
+def create_recurring_transaction():
+    """Create a new recurring transaction for the authenticated user."""
+    data = validate_recurring_transaction(request.get_json(silent=True))
+    user_id = session.get("user_id")
+    new_id = db.add_recurring_transaction(user_id, data)
+    rt = db.get_recurring_transaction(new_id, user_id)
+    # Audit log: recurring transaction create
+    db.audit_log(
+        action="recurring_create",
+        entity_type="recurring_transaction",
+        entity_id=str(new_id),
+        user_id=user_id,
+        metadata={"frequency": data["frequency"], "amount_cents": data["amount_cents"], "category": data["category"]}
+    )
+    return jsonify(dict(rt)), 201
+
+
+@bp.get("/recurring/<int:rt_id>")
+@login_required
+def get_recurring_transaction(rt_id):
+    """Retrieve a single recurring transaction ensuring user ownership."""
+    user_id = session.get("user_id")
+    rt = db.get_recurring_transaction(rt_id, user_id)
+    if not rt:
+        return jsonify(error="recurring transaction not found"), 404
+    return jsonify(dict(rt))
+
+
+@bp.put("/recurring/<int:rt_id>")
+@login_required
+def update_recurring_transaction(rt_id):
+    """Update an existing recurring transaction ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_recurring_transaction(rt_id, user_id)
+    if not existing:
+        return jsonify(error="recurring transaction not found"), 404
+
+    data = validate_recurring_transaction(request.get_json(silent=True))
+    # Capture old values for audit log
+    old_data = dict(existing)
+    db.update_recurring_transaction(rt_id, user_id, data)
+    updated = db.get_recurring_transaction(rt_id, user_id)
+    # Audit log: recurring transaction update
+    db.audit_log(
+        action="recurring_update",
+        entity_type="recurring_transaction",
+        entity_id=str(rt_id),
+        user_id=user_id,
+        metadata={"old": old_data, "new": dict(updated)}
+    )
+    return jsonify(dict(updated)), 200
+
+
+@bp.delete("/recurring/<int:rt_id>")
+@login_required
+def delete_recurring_transaction(rt_id):
+    """Delete a recurring transaction ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_recurring_transaction(rt_id, user_id)
+    if not existing:
+        return jsonify(error="recurring transaction not found"), 404
+
+    # Capture data for audit log before deletion
+    deleted_data = dict(existing)
+
+    if not db.delete_recurring_transaction(rt_id, user_id):
+        return jsonify(error="recurring transaction not found"), 404
+
+    # Audit log: recurring transaction delete
+    db.audit_log(
+        action="recurring_delete",
+        entity_type="recurring_transaction",
+        entity_id=str(rt_id),
+        user_id=user_id,
+        metadata=deleted_data
+    )
+    return "", 204
+
+
+@bp.post("/recurring/<int:rt_id>/pause")
+@login_required
+def pause_recurring_transaction(rt_id):
+    """Pause a recurring transaction."""
+    user_id = session.get("user_id")
+    existing = db.get_recurring_transaction(rt_id, user_id)
+    if not existing:
+        return jsonify(error="recurring transaction not found"), 404
+
+    db.update_recurring_transaction(rt_id, user_id, {"is_paused": 1})
+    # Audit log: recurring transaction pause
+    db.audit_log(
+        action="recurring_pause",
+        entity_type="recurring_transaction",
+        entity_id=str(rt_id),
+        user_id=user_id
+    )
+    updated = db.get_recurring_transaction(rt_id, user_id)
+    return jsonify(dict(updated)), 200
+
+
+@bp.post("/recurring/<int:rt_id>/resume")
+@login_required
+def resume_recurring_transaction(rt_id):
+    """Resume a paused recurring transaction."""
+    user_id = session.get("user_id")
+    existing = db.get_recurring_transaction(rt_id, user_id)
+    if not existing:
+        return jsonify(error="recurring transaction not found"), 404
+
+    db.update_recurring_transaction(rt_id, user_id, {"is_paused": 0})
+    # Audit log: recurring transaction resume
+    db.audit_log(
+        action="recurring_resume",
+        entity_type="recurring_transaction",
+        entity_id=str(rt_id),
+        user_id=user_id
+    )
+    updated = db.get_recurring_transaction(rt_id, user_id)
+    return jsonify(dict(updated)), 200
+
+
+@bp.post("/recurring/process")
+@login_required
+def process_recurring_transactions():
+    """Process due recurring transactions and generate actual transactions."""
+    user_id = session.get("user_id")
+    today = date.today()
+
+    due = db.get_due_recurring_transactions(user_id, today)
+    generated = []
+
+    for rt in due:
+        # Generate transaction for today
+        tx_id = db.generate_recurring_transaction(user_id, rt, today.isoformat())
+
+        # Calculate next due date based on frequency
+        from datetime import datetime, timedelta
+        next_due = date.fromisoformat(rt["next_due_date"])
+        if rt["frequency"] == "daily":
+            next_due = next_due + timedelta(days=1)
+        elif rt["frequency"] == "weekly":
+            next_due = next_due + timedelta(weeks=1)
+        elif rt["frequency"] == "monthly":
+            # Add one month
+            if next_due.month == 12:
+                next_due = next_due.replace(year=next_due.year + 1, month=1)
+            else:
+                next_due = next_due.replace(month=next_due.month + 1)
+        elif rt["frequency"] == "yearly":
+            next_due = next_due.replace(year=next_due.year + 1)
+
+        # Check if next_due exceeds end_date
+        if rt["end_date"] and next_due > date.fromisoformat(rt["end_date"]):
+            db.update_recurring_transaction(rt["id"], user_id, {
+                "next_due_date": next_due.isoformat(),
+                "last_generated": today.isoformat(),
+                "is_active": 0
+            })
+        else:
+            db.update_recurring_transaction(rt["id"], user_id, {
+                "next_due_date": next_due.isoformat(),
+                "last_generated": today.isoformat()
+            })
+
+        generated.append({"recurring_id": rt["id"], "transaction_id": tx_id, "next_due_date": next_due.isoformat()})
+
+        # Audit log: recurring transaction generated
+        db.audit_log(
+            action="recurring_generated",
+            entity_type="transaction",
+            entity_id=str(tx_id),
+            user_id=user_id,
+            metadata={"recurring_id": rt["id"], "frequency": rt["frequency"]}
+        )
+
+    return jsonify(generated=generated, count=len(generated)), 200
+
+
+# ============================================================================
+# Financial Goals Endpoints (User-Isolated)
+# ============================================================================
+
+@bp.get("/goals")
+@login_required
+def list_financial_goals():
+    """List all financial goals for the authenticated user."""
+    user_id = session.get("user_id")
+    is_completed = request.args.get("is_completed", type=int)
+
+    goals = db.list_financial_goals(user_id, is_completed=is_completed)
+    return jsonify(goals=[dict(g) for g in goals])
+
+
+@bp.post("/goals")
+@login_required
+def create_financial_goal():
+    """Create a new financial goal for the authenticated user."""
+    data = validate_financial_goal(request.get_json(silent=True))
+    user_id = session.get("user_id")
+    new_id = db.add_financial_goal(user_id, data)
+    goal = db.get_financial_goal(new_id, user_id)
+    # Audit log: goal create
+    db.audit_log(
+        action="goal_create",
+        entity_type="goal",
+        entity_id=str(new_id),
+        user_id=user_id,
+        metadata={"name": data["name"], "target_amount_cents": data["target_amount_cents"]}
+    )
+    return jsonify(dict(goal)), 201
+
+
+@bp.get("/goals/<int:goal_id>")
+@login_required
+def get_financial_goal(goal_id):
+    """Retrieve a single financial goal ensuring user ownership."""
+    user_id = session.get("user_id")
+    goal = db.get_financial_goal(goal_id, user_id)
+    if not goal:
+        return jsonify(error="goal not found"), 404
+
+    # Include progress info
+    progress = db.get_goal_progress(goal_id, user_id)
+    result = dict(goal)
+    result.update(progress)
+    return jsonify(result)
+
+
+@bp.put("/goals/<int:goal_id>")
+@login_required
+def update_financial_goal(goal_id):
+    """Update an existing financial goal ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_financial_goal(goal_id, user_id)
+    if not existing:
+        return jsonify(error="goal not found"), 404
+
+    data = validate_financial_goal(request.get_json(silent=True))
+    # Capture old values for audit log
+    old_data = dict(existing)
+    db.update_financial_goal(goal_id, user_id, data)
+    updated = db.get_financial_goal(goal_id, user_id)
+    # Audit log: goal update
+    db.audit_log(
+        action="goal_update",
+        entity_type="goal",
+        entity_id=str(goal_id),
+        user_id=user_id,
+        metadata={"old": old_data, "new": dict(updated)}
+    )
+    return jsonify(dict(updated)), 200
+
+
+@bp.delete("/goals/<int:goal_id>")
+@login_required
+def delete_financial_goal(goal_id):
+    """Delete a financial goal ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_financial_goal(goal_id, user_id)
+    if not existing:
+        return jsonify(error="goal not found"), 404
+
+    # Capture data for audit log before deletion
+    deleted_data = dict(existing)
+
+    if not db.delete_financial_goal(goal_id, user_id):
+        return jsonify(error="goal not found"), 404
+
+    # Audit log: goal delete
+    db.audit_log(
+        action="goal_delete",
+        entity_type="goal",
+        entity_id=str(goal_id),
+        user_id=user_id,
+        metadata=deleted_data
+    )
+    return "", 204
+
+
+@bp.post("/goals/<int:goal_id>/contributions")
+@login_required
+def add_goal_contribution(goal_id):
+    """Add a contribution to a financial goal."""
+    user_id = session.get("user_id")
+    existing = db.get_financial_goal(goal_id, user_id)
+    if not existing:
+        return jsonify(error="goal not found"), 404
+
+    data = validate_goal_contribution(request.get_json(silent=True))
+    contribution_id = db.add_goal_contribution(goal_id, user_id, data)
+
+    # Get updated goal progress
+    progress = db.get_goal_progress(goal_id, user_id)
+    # Audit log: goal contribution
+    db.audit_log(
+        action="goal_contribution",
+        entity_type="goal",
+        entity_id=str(goal_id),
+        user_id=user_id,
+        metadata={"amount_cents": data["amount_cents"], "progress_pct": progress["progress_pct"]}
+    )
+
+    # Check for goal completion notification
+    if progress["is_completed"] and not existing["is_completed"]:
+        db.audit_log(
+            action="goal_completed",
+            entity_type="goal",
+            entity_id=str(goal_id),
+            user_id=user_id,
+            metadata={"target_amount": progress["target_amount"], "final_amount": progress["current_amount"]}
+        )
+
+    return jsonify(contribution_id=contribution_id, progress=progress), 201
+
+
+@bp.get("/goals/<int:goal_id>/contributions")
+@login_required
+def list_goal_contributions(goal_id):
+    """List all contributions for a financial goal."""
+    user_id = session.get("user_id")
+    existing = db.get_financial_goal(goal_id, user_id)
+    if not existing:
+        return jsonify(error="goal not found"), 404
+
+    contributions = db.get_goal_contributions(goal_id, user_id)
+    return jsonify(contributions=[dict(c) for c in contributions])
+
+
+# ============================================================================
+# Subscription Endpoints (User-Isolated)
+# ============================================================================
+
+@bp.get("/subscriptions")
+@login_required
+def list_subscriptions():
+    """List all subscriptions for the authenticated user."""
+    user_id = session.get("user_id")
+    status = request.args.get("status", type=str)
+
+    subs = db.list_subscriptions(user_id, status=status)
+    return jsonify(subscriptions=[dict(s) for s in subs])
+
+
+@bp.post("/subscriptions")
+@login_required
+def create_subscription():
+    """Create a new subscription for the authenticated user."""
+    data = validate_subscription(request.get_json(silent=True))
+    user_id = session.get("user_id")
+    new_id = db.add_subscription(user_id, data)
+    sub = db.get_subscription(new_id, user_id)
+    # Audit log: subscription create
+    db.audit_log(
+        action="subscription_create",
+        entity_type="subscription",
+        entity_id=str(new_id),
+        user_id=user_id,
+        metadata={"name": data["name"], "amount_cents": data["amount_cents"], "billing_cycle": data["billing_cycle"]}
+    )
+    return jsonify(dict(sub)), 201
+
+
+@bp.get("/subscriptions/<int:sub_id>")
+@login_required
+def get_subscription(sub_id):
+    """Retrieve a single subscription ensuring user ownership."""
+    user_id = session.get("user_id")
+    sub = db.get_subscription(sub_id, user_id)
+    if not sub:
+        return jsonify(error="subscription not found"), 404
+    return jsonify(dict(sub))
+
+
+@bp.put("/subscriptions/<int:sub_id>")
+@login_required
+def update_subscription(sub_id):
+    """Update an existing subscription ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_subscription(sub_id, user_id)
+    if not existing:
+        return jsonify(error="subscription not found"), 404
+
+    data = validate_subscription(request.get_json(silent=True))
+    # Capture old values for audit log
+    old_data = dict(existing)
+    db.update_subscription(sub_id, user_id, data)
+    updated = db.get_subscription(sub_id, user_id)
+    # Audit log: subscription update
+    db.audit_log(
+        action="subscription_update",
+        entity_type="subscription",
+        entity_id=str(sub_id),
+        user_id=user_id,
+        metadata={"old": old_data, "new": dict(updated)}
+    )
+    return jsonify(dict(updated)), 200
+
+
+@bp.delete("/subscriptions/<int:sub_id>")
+@login_required
+def delete_subscription(sub_id):
+    """Delete a subscription ensuring user ownership."""
+    user_id = session.get("user_id")
+    existing = db.get_subscription(sub_id, user_id)
+    if not existing:
+        return jsonify(error="subscription not found"), 404
+
+    # Capture data for audit log before deletion
+    deleted_data = dict(existing)
+
+    if not db.delete_subscription(sub_id, user_id):
+        return jsonify(error="subscription not found"), 404
+
+    # Audit log: subscription delete
+    db.audit_log(
+        action="subscription_delete",
+        entity_type="subscription",
+        entity_id=str(sub_id),
+        user_id=user_id,
+        metadata=deleted_data
+    )
+    return "", 204
+
+
+@bp.get("/subscriptions/upcoming")
+@login_required
+def get_upcoming_subscriptions():
+    """Get subscriptions with upcoming renewals."""
+    user_id = session.get("user_id")
+    days_ahead = request.args.get("days", 30, type=int)
+
+    upcoming = db.get_upcoming_renewals(user_id, days_ahead)
+    return jsonify(subscriptions=[dict(s) for s in upcoming])
+
+
+@bp.get("/subscriptions/totals")
+@login_required
+def get_subscription_totals():
+    """Get monthly and annual subscription totals."""
+    user_id = session.get("user_id")
+    totals = db.get_subscription_totals(user_id)
+    return jsonify(totals)
+
+
+# ============================================================================
+# Notification Endpoints (User-Isolated)
+# ============================================================================
+
+@bp.get("/notifications")
+@login_required
+def list_notifications():
+    """List notifications for the authenticated user with pagination."""
+    user_id = session.get("user_id")
+    is_read = request.args.get("is_read", type=int)
+    page = request.args.get("page", 1, type=int)
+    per_page = min(max(request.args.get("per_page", 20, type=int), 1), 100)
+    offset = (page - 1) * per_page
+
+    notifications = db.list_notifications(user_id, is_read=is_read, limit=per_page, offset=offset)
+    total = db.count_notifications(user_id, is_read=is_read)
+
+    return jsonify(
+        notifications=[dict(n) for n in notifications],
+        pagination={
+            "current_page": page,
+            "per_page": per_page,
+            "total_records": total,
+            "total_pages": (total + per_page - 1) // per_page,
+            "has_next": page * per_page < total,
+            "has_previous": page > 1,
+        }
+    )
+
+
+@bp.get("/notifications/unread-count")
+@login_required
+def get_unread_notification_count():
+    """Get count of unread notifications."""
+    user_id = session.get("user_id")
+    count = db.count_notifications(user_id, is_read=0)
+    return jsonify(unread_count=count)
+
+
+@bp.get("/notifications/<int:notif_id>")
+@login_required
+def get_notification(notif_id):
+    """Retrieve a single notification ensuring user ownership."""
+    user_id = session.get("user_id")
+    notif = db.get_notification(notif_id, user_id)
+    if not notif:
+        return jsonify(error="notification not found"), 404
+    return jsonify(dict(notif))
+
+
+@bp.post("/notifications/<int:notif_id>/read")
+@login_required
+def mark_notification_read(notif_id):
+    """Mark a notification as read."""
+    user_id = session.get("user_id")
+    if not db.mark_notification_read(notif_id, user_id):
+        return jsonify(error="notification not found"), 404
+    return jsonify(success=True), 200
+
+
+@bp.post("/notifications/read-all")
+@login_required
+def mark_all_notifications_read():
+    """Mark all notifications as read."""
+    user_id = session.get("user_id")
+    count = db.mark_all_notifications_read(user_id)
+    return jsonify(marked=count), 200
+
+
+@bp.delete("/notifications/<int:notif_id>")
+@login_required
+def delete_notification(notif_id):
+    """Delete a notification."""
+    user_id = session.get("user_id")
+    if not db.delete_notification(notif_id, user_id):
+        return jsonify(error="notification not found"), 404
+    return "", 204
+
+
+@bp.post("/notifications/check")
+@login_required
+def run_notification_checks():
+    """Manually trigger notification checks for the user."""
+    user_id = session.get("user_id")
+    results = db.run_all_notification_checks(user_id)
+    return jsonify(results)
+
+
+# ============================================================================
+# Financial Forecasting Endpoints (User-Isolated)
+# ============================================================================
+
+@bp.get("/forecast")
+@login_required
+def get_financial_forecast():
+    """Generate financial forecast based on historical transaction data."""
+    from datetime import datetime
+    user_id = session.get("user_id")
+
+    # Get months of history to analyze
+    months = request.args.get("months", 6, type=int)
+    if not 1 <= months <= 36:
+        raise ValidationError("months must be between 1 and 36")
+
+    # Get historical transactions
+    conn = db.get_db()
+    today = date.today()
+
+    # Calculate date range
+    if today.month > months:
+        start_month = today.month - months
+        start_year = today.year
+    else:
+        start_month = today.month - months + 12
+        start_year = today.year - 1
+
+    start_date = f"{start_year}-{start_month:02d}-01"
+    end_date = today.isoformat()
+
+    # Get monthly totals by category
+    rows = conn.execute(
+        """SELECT date, type, amount_cents, category
+           FROM transactions
+           WHERE user_id = ? AND date BETWEEN ? AND ?
+           ORDER BY date ASC""",
+        (user_id, start_date, end_date)
+    ).fetchall()
+
+    if len(rows) < 2:
+        return jsonify(
+            forecast=None,
+            message="Insufficient historical data for forecasting. Need at least 2 months of transactions."
+        )
+
+    # Process by month
+    monthly_data = {}
+    for row in rows:
+        dt = datetime.fromisoformat(row["date"])
+        month_key = f"{dt.year}-{dt.month:02d}"
+        if month_key not in monthly_data:
+            monthly_data[month_key] = {"income": 0, "expense": 0, "categories": {}}
+
+        amount = row["amount_cents"] / 100
+        if row["type"] == "income":
+            monthly_data[month_key]["income"] += amount
+        else:
+            monthly_data[month_key]["expense"] += amount
+            cat = row["category"]
+            monthly_data[month_key]["categories"][cat] = monthly_data[month_key]["categories"].get(cat, 0) + amount
+
+    # Sort months
+    sorted_months = sorted(monthly_data.keys())
+    if len(sorted_months) < 2:
+        return jsonify(
+            forecast=None,
+            message="Insufficient monthly data points for forecasting."
+        )
+
+    # Simple moving average forecast (last 3 months)
+    recent_months = sorted_months[-3:] if len(sorted_months) >= 3 else sorted_months
+    income_values = [monthly_data[m]["income"] for m in recent_months]
+    expense_values = [monthly_data[m]["expense"] for m in recent_months]
+
+    avg_income = sum(income_values) / len(income_values)
+    avg_expense = sum(expense_values) / len(expense_values)
+
+    # Category-wise forecast where data exists
+    category_forecasts = {}
+    all_categories = set()
+    for m in recent_months:
+        all_categories.update(monthly_data[m]["categories"].keys())
+
+    for cat in all_categories:
+        cat_values = [monthly_data[m]["categories"].get(cat, 0) for m in recent_months]
+        if cat_values and sum(cat_values) > 0:
+            category_forecasts[cat] = round(sum(cat_values) / len(cat_values), 2)
+
+    # Linear regression for trend (simple implementation)
+    def linear_trend(values):
+        n = len(values)
+        if n < 2:
+            return 0
+        x = list(range(n))
+        y = values
+        sum_x = sum(x)
+        sum_y = sum(y)
+        sum_xy = sum(x[i] * y[i] for i in range(n))
+        sum_x2 = sum(x[i] * x[i] for i in range(n))
+
+        denominator = n * sum_x2 - sum_x * sum_x
+        if denominator == 0:
+            return 0
+
+        slope = (n * sum_xy - sum_x * sum_y) / denominator
+        return slope
+
+    income_trend = linear_trend(income_values)
+    expense_trend = linear_trend(expense_values)
+
+    # Next month forecast
+    next_month_income = round(avg_income + income_trend, 2)
+    next_month_expense = round(avg_expense + expense_trend, 2)
+    next_month_savings = round(next_month_income - next_month_expense, 2)
+
+    # Confidence indicator based on data volume and consistency
+    cv_income = 0
+    cv_expense = 0
+    if len(income_values) > 1:
+        import statistics
+        try:
+            cv_income = statistics.stdev(income_values) / statistics.mean(income_values) if statistics.mean(income_values) > 0 else 0
+            cv_expense = statistics.stdev(expense_values) / statistics.mean(expense_values) if statistics.mean(expense_values) > 0 else 0
+        except:
+            pass
+
+    confidence = "high"
+    if cv_income > 0.5 or cv_expense > 0.5:
+        confidence = "low"
+    elif cv_income > 0.3 or cv_expense > 0.3:
+        confidence = "medium"
+
+    return jsonify(
+        forecast={
+            "period": "next_month",
+            "predicted_income": next_month_income,
+            "predicted_expense": next_month_expense,
+            "predicted_savings": next_month_savings,
+            "income_trend": round(income_trend, 2),
+            "expense_trend": round(expense_trend, 2),
+            "category_forecasts": category_forecasts,
+            "confidence": confidence,
+            "based_on_months": len(sorted_months),
+            "data_quality": {
+                "income_cv": round(cv_income, 3),
+                "expense_cv": round(cv_expense, 3),
+            },
+            "disclaimer": "Forecasts are estimates based on historical data and simple statistical methods. They are not guaranteed financial outcomes."
+        }
+    )
 

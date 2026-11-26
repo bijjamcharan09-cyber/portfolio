@@ -6,5 +6,3 @@
 -- SQLite doesn't support IF NOT EXISTS for columns, so we use a workaround
 -- This will fail gracefully if column already exists (checked in application logic)
 ALTER TABLE transactions ADD COLUMN payment_method TEXT DEFAULT '';
-
--- Note: guest_transactions already has payment_method column from initial schema
