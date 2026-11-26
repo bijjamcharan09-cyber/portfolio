@@ -156,6 +156,219 @@ def create_app(test_config=None):
             )
             print(f"Administrator account '{clean_email}' (ID: {user_id}) created successfully.")
 
+    # CLI command: process-recurring
+    @app.cli.command("process-recurring")
+    @click.option("--date", default=None, help="Date to process for (YYYY-MM-DD), defaults to today")
+    @click.option("--user-id", type=int, default=None, help="Specific user ID to process (default: all users)")
+    def process_recurring_command(date, user_id):
+        """Process due recurring transactions and generate actual transactions."""
+        from datetime import date as dt_date
+        with app.app_context():
+            if date:
+                try:
+                    process_date = dt_date.fromisoformat(date)
+                except ValueError:
+                    print("Error: Invalid date format. Use YYYY-MM-DD.")
+                    return
+            else:
+                process_date = dt_date.today()
+
+            if user_id:
+                users_to_process = [db.get_user_by_id(user_id)]
+                if not users_to_process[0]:
+                    print(f"Error: User with ID {user_id} not found.")
+                    return
+            else:
+                # Get all active users
+                conn = db.get_db()
+                users_to_process = conn.execute(
+                    "SELECT id, email FROM users WHERE is_active = 1"
+                ).fetchall()
+
+            total_generated = 0
+            for user in users_to_process:
+                uid = user["id"]
+                due = db.get_due_recurring_transactions(uid, process_date)
+                for rt in due:
+                    tx_id = db.generate_recurring_transaction(uid, rt, process_date.isoformat())
+
+                    # Calculate next due date
+                    from datetime import timedelta
+                    next_due = dt_date.fromisoformat(rt["next_due_date"])
+                    if rt["frequency"] == "daily":
+                        next_due = next_due + timedelta(days=1)
+                    elif rt["frequency"] == "weekly":
+                        next_due = next_due + timedelta(weeks=1)
+                    elif rt["frequency"] == "monthly":
+                        if next_due.month == 12:
+                            next_due = next_due.replace(year=next_due.year + 1, month=1)
+                        else:
+                            next_due = next_due.replace(month=next_due.month + 1)
+                    elif rt["frequency"] == "yearly":
+                        next_due = next_due.replace(year=next_due.year + 1)
+
+                    # Check if next_due exceeds end_date
+                    if rt["end_date"] and next_due > dt_date.fromisoformat(rt["end_date"]):
+                        db.update_recurring_transaction(rt["id"], uid, {
+                            "next_due_date": next_due.isoformat(),
+                            "last_generated": process_date.isoformat(),
+                            "is_active": 0
+                        })
+                    else:
+                        db.update_recurring_transaction(rt["id"], uid, {
+                            "next_due_date": next_due.isoformat(),
+                            "last_generated": process_date.isoformat()
+                        })
+
+                    total_generated += 1
+                    print(f"  Generated transaction {tx_id} for user {uid} (recurring: {rt['id']})")
+
+            print(f"Processed recurring transactions for {process_date}: {total_generated} transactions generated.")
+
+    # CLI command: check-notifications
+    @app.cli.command("check-notifications")
+    @click.option("--user-id", type=int, default=None, help="Specific user ID to check (default: all users)")
+    def check_notifications_command(user_id):
+        """Check and create all types of notifications for users."""
+        with app.app_context():
+            if user_id:
+                users_to_check = [db.get_user_by_id(user_id)]
+                if not users_to_check[0]:
+                    print(f"Error: User with ID {user_id} not found.")
+                    return
+            else:
+                conn = db.get_db()
+                users_to_check = conn.execute(
+                    "SELECT id, email FROM users WHERE is_active = 1"
+                ).fetchall()
+
+            total_notifications = 0
+            for user in users_to_check:
+                uid = user["id"]
+                print(f"Checking notifications for user {uid}...")
+
+                # Check budget notifications
+                budget_notifs = db.check_budget_notifications(uid)
+                total_notifications += len(budget_notifs)
+                if budget_notifs:
+                    print(f"  Budget notifications: {len(budget_notifs)}")
+
+                # Check recurring transaction notifications
+                recurring_notifs = db.check_recurring_notifications(uid)
+                total_notifications += len(recurring_notifs)
+                if recurring_notifs:
+                    print(f"  Recurring notifications: {len(recurring_notifs)}")
+
+                # Check subscription renewal notifications
+                subscription_notifs = db.check_subscription_notifications(uid)
+                total_notifications += len(subscription_notifs)
+                if subscription_notifs:
+                    print(f"  Subscription notifications: {len(subscription_notifs)}")
+
+                # Check goal milestone notifications
+                goal_notifs = db.check_goal_notifications(uid)
+                total_notifications += len(goal_notifs)
+                if goal_notifs:
+                    print(f"  Goal notifications: {len(goal_notifs)}")
+
+            print(f"Total notifications created: {total_notifications}")
+
+    # CLI command: process-all (runs both recurring and notifications)
+    @app.cli.command("process-all")
+    @click.option("--date", default=None, help="Date to process for (YYYY-MM-DD), defaults to today")
+    @click.option("--user-id", type=int, default=None, help="Specific user ID to process (default: all users)")
+    def process_all_command(date, user_id):
+        """Run both recurring transaction processing and notification checks."""
+        from datetime import date as dt_date
+        with app.app_context():
+            if date:
+                try:
+                    process_date = dt_date.fromisoformat(date)
+                except ValueError:
+                    print("Error: Invalid date format. Use YYYY-MM-DD.")
+                    return
+            else:
+                process_date = dt_date.today()
+
+            if user_id:
+                users_to_process = [db.get_user_by_id(user_id)]
+                if not users_to_process[0]:
+                    print(f"Error: User with ID {user_id} not found.")
+                    return
+            else:
+                conn = db.get_db()
+                users_to_process = conn.execute(
+                    "SELECT id, email FROM users WHERE is_active = 1"
+                ).fetchall()
+
+            # Process recurring transactions
+            print(f"Processing recurring transactions for {process_date}...")
+            total_generated = 0
+            for user in users_to_process:
+                uid = user["id"]
+                due = db.get_due_recurring_transactions(uid, process_date)
+                for rt in due:
+                    tx_id = db.generate_recurring_transaction(uid, rt, process_date.isoformat())
+
+                    from datetime import timedelta
+                    next_due = dt_date.fromisoformat(rt["next_due_date"])
+                    if rt["frequency"] == "daily":
+                        next_due = next_due + timedelta(days=1)
+                    elif rt["frequency"] == "weekly":
+                        next_due = next_due + timedelta(weeks=1)
+                    elif rt["frequency"] == "monthly":
+                        if next_due.month == 12:
+                            next_due = next_due.replace(year=next_due.year + 1, month=1)
+                        else:
+                            next_due = next_due.replace(month=next_due.month + 1)
+                    elif rt["frequency"] == "yearly":
+                        next_due = next_due.replace(year=next_due.year + 1)
+
+                    if rt["end_date"] and next_due > dt_date.fromisoformat(rt["end_date"]):
+                        db.update_recurring_transaction(rt["id"], uid, {
+                            "next_due_date": next_due.isoformat(),
+                            "last_generated": process_date.isoformat(),
+                            "is_active": 0
+                        })
+                    else:
+                        db.update_recurring_transaction(rt["id"], uid, {
+                            "next_due_date": next_due.isoformat(),
+                            "last_generated": process_date.isoformat()
+                        })
+
+                    total_generated += 1
+                    print(f"  Generated transaction {tx_id} for user {uid} (recurring: {rt['id']})")
+
+            print(f"  Recurring transactions generated: {total_generated}")
+
+            # Check notifications
+            print(f"Checking notifications for {process_date}...")
+            total_notifications = 0
+            for user in users_to_process:
+                uid = user["id"]
+                budget_notifs = db.check_budget_notifications(uid)
+                total_notifications += len(budget_notifs)
+                if budget_notifs:
+                    print(f"  Budget notifications for user {uid}: {len(budget_notifs)}")
+
+                recurring_notifs = db.check_recurring_notifications(uid)
+                total_notifications += len(recurring_notifs)
+                if recurring_notifs:
+                    print(f"  Recurring notifications for user {uid}: {len(recurring_notifs)}")
+
+                subscription_notifs = db.check_subscription_notifications(uid)
+                total_notifications += len(subscription_notifs)
+                if subscription_notifs:
+                    print(f"  Subscription notifications for user {uid}: {len(subscription_notifs)}")
+
+                goal_notifs = db.check_goal_notifications(uid)
+                total_notifications += len(goal_notifs)
+                if goal_notifs:
+                    print(f"  Goal notifications for user {uid}: {len(goal_notifs)}")
+
+            print(f"Total notifications created: {total_notifications}")
+            print(f"Done! Generated {total_generated} transactions and {total_notifications} notifications.")
+
     @app.errorhandler(ValidationError)
     def handle_validation_error(err):
         app.logger.warning("Validation error: %s", err, extra={"path": request.path, "method": request.method})
