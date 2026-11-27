@@ -33,7 +33,7 @@ def test_production_rejects_insecure_secret_key():
 
 
 def test_production_rejects_sqlite_mode():
-    with pytest.raises(RuntimeError, match="Production deployment on Vercel requires DATABASE_MODE='turso'"):
+    with pytest.raises(RuntimeError, match="requires DATABASE_MODE='turso'"):
         Config.validate_production_config({
             "IS_PRODUCTION": True,
             "SECRET_KEY": "very-secure-random-production-secret-12345",

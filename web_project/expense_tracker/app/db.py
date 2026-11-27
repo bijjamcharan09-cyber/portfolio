@@ -350,15 +350,55 @@ def init_schema(conn=None):
 def init_db(app):
     """Initialize database handling for the Flask app.
     Registers teardown handler and safely ensures schema is initialized.
+    In production Turso mode, connection/schema failures raise a sanitized startup error
+    instead of silently falling back or continuing with an uninitialized database.
     """
     app.teardown_appcontext(close_db)
+
+    is_prod_turso = (
+        not app.config.get("TESTING", False)
+        and app.config.get("IS_PRODUCTION", False)
+        and app.config.get("DATABASE_MODE") == "turso"
+    )
+    token = app.config.get("TURSO_AUTH_TOKEN", "")
 
     # Automatically ensure schema exists on both SQLite and Turso
     try:
         with app.app_context():
             init_schema()
     except Exception as exc:
-        logger.warning("Could not auto-initialize database schema on startup: %s", exc)
+        safe_msg = _sanitize_message(str(exc), token)
+        if is_prod_turso:
+            logger.error("Production Turso initialization failed: %s", safe_msg)
+            raise RuntimeError(f"Production Turso database initialization failed: {safe_msg}") from None
+        logger.warning("Could not auto-initialize database schema on startup: %s", safe_msg)
+
+
+def verify_database_connection():
+    """Verify active database connectivity and presence of core Release 1 & 2 tables."""
+    conn = get_db()
+    conn.execute("SELECT 1").fetchone()
+    required_tables = {
+        "users",
+        "transactions",
+        "guest_transactions",
+        "audit_log",
+        "budgets",
+        "recurring_transactions",
+        "financial_goals",
+        "goal_contributions",
+        "subscriptions",
+        "notifications",
+    }
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    existing = {r["name"] if hasattr(r, "keys") else r[0] for r in rows}
+    missing = sorted(required_tables - existing)
+    return {
+        "mode": current_app.config.get("DATABASE_MODE", "sqlite"),
+        "connected": True,
+        "missing_tables": missing,
+        "tables_ok": len(missing) == 0,
+    }
 
 
 def row_to_dict(row):

@@ -16,7 +16,11 @@ if "MPLCONFIGDIR" not in os.environ:
 
 class Config:
     FLASK_ENV = os.getenv("FLASK_ENV", "development").strip().lower()
-    IS_PRODUCTION = FLASK_ENV == "production" or os.getenv("VERCEL") == "1"
+    IS_RAILWAY = bool(
+        os.getenv("RAILWAY_ENVIRONMENT", "").strip()
+        or os.getenv("RAILWAY_PROJECT_ID", "").strip()
+    )
+    IS_PRODUCTION = FLASK_ENV == "production" or os.getenv("VERCEL") == "1" or IS_RAILWAY
 
     # Secret key configuration
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-me")
@@ -102,22 +106,12 @@ class Config:
             if secret in cls.INSECURE_SECRETS:
                 raise RuntimeError("Production requires a secure, non-default SECRET_KEY environment variable.")
 
-            # Vercel serverless environment strictly forbids local SQLite
-            is_vercel = cfg.get("VERCEL") == "1" or os.getenv("VERCEL") == "1"
-            if is_vercel and mode != "turso":
+            # Production deployments (Railway, Vercel, or FLASK_ENV=production) must use Turso
+            if mode != "turso":
                 raise RuntimeError(
-                    "Production deployment on Vercel requires DATABASE_MODE='turso' and remote Turso database credentials. "
-                    "Local SQLite cannot persist data across serverless executions."
+                    "Production deployment requires DATABASE_MODE='turso' and remote Turso database credentials. "
+                    "Local SQLite is disabled in production."
                 )
-
-            # SQLite in production (e.g. Railway persistent volume mount)
-            if mode == "sqlite":
-                db_path = cfg.get("DATABASE_PATH") or cfg.get("SQLITE_DATABASE_PATH") or ""
-                if not db_path:
-                    raise RuntimeError(
-                        "Production deployment on Vercel requires DATABASE_MODE='turso' and remote Turso database credentials. "
-                        "For Railway deployment with SQLite, a persistent volume DATABASE_PATH (e.g. /data/expenses.db) must be configured."
-                    )
 
         if mode == "turso":
             url = cfg.get("TURSO_DATABASE_URL", "").strip()

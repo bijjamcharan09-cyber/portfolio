@@ -58,19 +58,28 @@ def readiness_check():
     Returns 200 if ready to serve traffic, 503 if not ready.
     """
     try:
-        conn = db.get_db()
-        conn.execute("SELECT 1").fetchone()
+        status = db.verify_database_connection()
+        if not status["tables_ok"]:
+            return {
+                "status": "not_ready",
+                "service": "expense-tracker",
+                "database": "incomplete_schema",
+                "database_mode": status["mode"],
+            }, 503
         return {
             "status": "ready",
             "service": "expense-tracker",
             "database": "connected",
+            "database_mode": status["mode"],
         }, 200
     except Exception as exc:
-        current_app.logger.error("Readiness check failed: %s", exc)
+        safe_msg = db._sanitize_message(str(exc), current_app.config.get("TURSO_AUTH_TOKEN", ""))
+        current_app.logger.error("Readiness check failed: %s", safe_msg)
         return {
             "status": "not_ready",
             "service": "expense-tracker",
             "database": "disconnected",
+            "database_mode": current_app.config.get("DATABASE_MODE", "sqlite"),
         }, 503
 
 

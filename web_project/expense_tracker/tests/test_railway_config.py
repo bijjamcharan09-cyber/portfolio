@@ -50,20 +50,31 @@ def test_sqlite_pragmas_and_wal_mode(tmp_path):
         conn.close()
 
 
-def test_production_validation_accepts_railway_sqlite(monkeypatch):
-    """Production validation must permit SQLite when a persistent DATABASE_PATH is provided."""
-    # Should not raise an exception
+def test_production_validation_rejects_sqlite_on_railway():
+    """Production validation must reject SQLite on Railway and require Turso."""
+    with pytest.raises(RuntimeError, match="Production deployment requires DATABASE_MODE='turso'"):
+        Config.validate_production_config({
+            "IS_PRODUCTION": True,
+            "SECRET_KEY": "a-strong-random-production-secret-key-64charslong1234567890",
+            "DATABASE_MODE": "sqlite",
+            "DATABASE_PATH": "/data/expenses.db",
+        })
+
+
+def test_production_validation_accepts_turso():
+    """Production validation must succeed when Turso mode and credentials are configured."""
     Config.validate_production_config({
         "IS_PRODUCTION": True,
         "SECRET_KEY": "a-strong-random-production-secret-key-64charslong1234567890",
-        "DATABASE_MODE": "sqlite",
-        "DATABASE_PATH": "/data/expenses.db",
+        "DATABASE_MODE": "turso",
+        "TURSO_DATABASE_URL": "libsql://expense-tracker-test.turso.io",
+        "TURSO_AUTH_TOKEN": "valid-test-token",
     })
 
 
 def test_production_validation_still_enforces_vercel_turso():
-    """Production validation must still forbid SQLite when running in Vercel serverless environment."""
-    with pytest.raises(RuntimeError, match="Production deployment on Vercel requires DATABASE_MODE='turso'"):
+    """Production validation must forbid SQLite when running in Vercel serverless environment."""
+    with pytest.raises(RuntimeError, match="requires DATABASE_MODE='turso'"):
         Config.validate_production_config({
             "IS_PRODUCTION": True,
             "VERCEL": "1",
