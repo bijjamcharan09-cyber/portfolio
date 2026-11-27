@@ -1,0 +1,134 @@
+<nav class="feature-nav" aria-label="Financial features">
+  <div class="feature-toggle-bar">
+    <a href="{{ url_for('views.index') }}"
+       class="feature-toggle-home {% if active_page == 'dashboard' %}active{% endif %}"
+       {% if active_page == 'dashboard' %}aria-current="page"{% endif %}>
+      <svg class="ft-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 9.5L10 3.5l7 6V16.5a1 1 0 01-1 1h-4v-4.5H8v4.5H4a1 1 0 01-1-1V9.5z"/>
+      </svg>
+      <span>Dashboard</span>
+    </a>
+
+    <details class="feature-menu">
+      <summary class="feature-menu-trigger {% if active_page != 'dashboard' %}has-active{% endif %}">
+        <span class="trigger-main">
+          <svg class="ft-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <rect x="3" y="3" width="6" height="6" rx="1.5"/>
+            <rect x="11" y="3" width="6" height="6" rx="1.5"/>
+            <rect x="3" y="11" width="6" height="6" rx="1.5"/>
+            <rect x="11" y="11" width="6" height="6" rx="1.5"/>
+          </svg>
+          <span class="trigger-label">
+            {% if active_page != 'dashboard' %}
+              {{ active_label }}
+            {% else %}
+              Features
+            {% endif %}
+          </span>
+          <span class="trigger-count">6</span>
+          <span class="menu-unread-dot" aria-hidden="true"></span>
+        </span>
+        <svg class="trigger-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 8l4 4 4-4"/>
+        </svg>
+      </summary>
+
+      <div class="feature-menu-panel" role="region" aria-label="All 6 financial features">
+        <div class="feature-menu-header">
+          <span class="feature-menu-title">Financial Toolkit</span>
+          <span class="feature-menu-subtitle">Choose a workspace</span>
+        </div>
+        <div class="feature-menu-grid">
+          <a href="{{ url_for('views.budgets') }}"
+             class="feature-menu-item {% if active_page == 'budgets' %}active{% endif %}"
+             {% if active_page == 'budgets' %}aria-current="page"{% endif %}>
+            <span class="fm-icon fm-icon-blue" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 3v7h7M17 10a7 7 0 11-7-7"/>
+              </svg>
+            </span>
+            <span class="fm-text">
+              <span class="fm-name">Budgets</span>
+              <span class="fm-desc">Spending limits &amp; alerts</span>
+            </span>
+          </a>
+
+          <a href="{{ url_for('views.recurring') }}"
+             class="feature-menu-item {% if active_page == 'recurring' %}active{% endif %}"
+             {% if active_page == 'recurring' %}aria-current="page"{% endif %}>
+            <span class="fm-icon fm-icon-emerald" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 9a6 6 0 0110.5-3.9L16 6.5M16 3.5v3h-3M16 11a6 6 0 01-10.5 3.9L4 13.5M4 16.5v-3h3"/>
+              </svg>
+            </span>
+            <span class="fm-text">
+              <span class="fm-name">Recurring</span>
+              <span class="fm-desc">Auto-log bills &amp; salary</span>
+            </span>
+          </a>
+
+          <a href="{{ url_for('views.goals') }}"
+             class="feature-menu-item {% if active_page == 'goals' %}active{% endif %}"
+             {% if active_page == 'goals' %}aria-current="page"{% endif %}>
+            <span class="fm-icon fm-icon-amber" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75">
+                <circle cx="10" cy="10" r="7"/>
+                <circle cx="10" cy="10" r="3"/>
+              </svg>
+            </span>
+            <span class="fm-text">
+              <span class="fm-name">Goals</span>
+              <span class="fm-desc">Savings targets &amp; milestones</span>
+            </span>
+          </a>
+
+          <a href="{{ url_for('views.subscriptions') }}"
+             class="feature-menu-item {% if active_page == 'subscriptions' %}active{% endif %}"
+             {% if active_page == 'subscriptions' %}aria-current="page"{% endif %}>
+            <span class="fm-icon fm-icon-violet" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75">
+                <rect x="3" y="5" width="14" height="10" rx="2"/>
+                <path stroke-linecap="round" d="M3 9h14"/>
+              </svg>
+            </span>
+            <span class="fm-text">
+              <span class="fm-name">Subscriptions</span>
+              <span class="fm-desc">Renewals &amp; monthly costs</span>
+            </span>
+          </a>
+
+          <a href="{{ url_for('views.forecast') }}"
+             class="feature-menu-item {% if active_page == 'forecast' %}active{% endif %}"
+             {% if active_page == 'forecast' %}aria-current="page"{% endif %}>
+            <span class="fm-icon fm-icon-cyan" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 14l4-4 3 3 6-6M13 7h3v3"/>
+              </svg>
+            </span>
+            <span class="fm-text">
+              <span class="fm-name">Forecast</span>
+              <span class="fm-desc">Cash flow projections</span>
+            </span>
+          </a>
+
+          <a href="{{ url_for('views.notifications') }}"
+             class="feature-menu-item {% if active_page == 'notifications' %}active{% endif %}"
+             {% if active_page == 'notifications' %}aria-current="page"{% endif %}>
+            <span class="fm-icon fm-icon-rose" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 8a5 5 0 00-10 0c0 4.5-2 6-2 6h14s-2-1.5-2-6zM8.5 16.5a1.5 1.5 0 003 0"/>
+              </svg>
+            </span>
+            <span class="fm-text fm-text-row">
+              <span>
+                <span class="fm-name">Notifications</span>
+                <span class="fm-desc">Reminders &amp; alerts</span>
+              </span>
+              <span id="notif-badge" class="notif-badge" hidden>0</span>
+            </span>
+          </a>
+        </div>
+      </div>
+    </details>
+  </div>
+</nav>

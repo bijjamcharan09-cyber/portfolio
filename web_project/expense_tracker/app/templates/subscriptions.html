@@ -40,18 +40,9 @@
 </header>
 
 <main>
-  <nav class="feature-nav" aria-label="Financial features">
-    <a href="{{ url_for('views.index') }}" class="feature-nav-item">Dashboard</a>
-    <a href="{{ url_for('views.budgets') }}" class="feature-nav-item">Budgets</a>
-    <a href="{{ url_for('views.recurring') }}" class="feature-nav-item">Recurring</a>
-    <a href="{{ url_for('views.goals') }}" class="feature-nav-item">Goals</a>
-    <a href="{{ url_for('views.subscriptions') }}" class="feature-nav-item active">Subscriptions</a>
-    <a href="{{ url_for('views.forecast') }}" class="feature-nav-item">Forecast</a>
-    <a href="{{ url_for('views.notifications') }}" class="feature-nav-item">
-      Notifications
-      <span id="notif-badge" class="notif-badge" hidden>0</span>
-    </a>
-  </nav>
+  {% with active_page='subscriptions', active_label='Subscriptions' %}
+    {% include "_feature_nav.html" %}
+  {% endwith %}
 
   <section class="panel wide" aria-labelledby="subscriptions-h">
     <div class="panel-header-row">
