@@ -88,6 +88,10 @@ class Config:
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
     # LOG_FORMAT: 'json' for structured logging, 'text' for human-readable
     LOG_FORMAT = os.getenv("LOG_FORMAT", "json").strip().lower()
+    # Performance Instrumentation Configuration
+    PERF_LOGGING_ENABLED = os.getenv("PERF_LOGGING_ENABLED", "true").strip().lower() == "true"
+    SLOW_QUERY_THRESHOLD_MS = float(os.getenv("SLOW_QUERY_THRESHOLD_MS", "200"))
+    SLOW_REQUEST_THRESHOLD_MS = float(os.getenv("SLOW_REQUEST_THRESHOLD_MS", "1000"))
     # Sentry Configuration (optional)
     SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
     SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))

@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 from matplotlib.figure import Figure
 
+from .. import cache
 from ..db import get_db
 
 INCOME_COLOR = "#1f7a5c"
@@ -36,54 +37,51 @@ def _labels(start, end, monthly):
 
 
 def summarize(start, end, user_id=None):
-    conn = get_db()
     s, e = start.isoformat(), end.isoformat()
-
-    totals = {"income": 0, "expense": 0}
     if user_id is not None:
-        for r in conn.execute(
-            "SELECT type, SUM(amount_cents) AS t FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ? GROUP BY type",
-            (user_id, s, e),
-        ):
-            totals[r["type"]] = r["t"]
+        cached = cache.get_cached_summary(user_id, s, e)
+        if cached is not None:
+            return cached
 
+    conn = get_db()
+    totals = {"income": 0, "expense": 0}
+    monthly = (end - start).days > 92  # long ranges are grouped by month
+    bucket = "substr(date, 1, 7)" if monthly else "date"  # constant strings, not user input
+
+    if user_id is not None:
         cats = conn.execute(
             "SELECT category, SUM(amount_cents) AS t FROM transactions "
             "WHERE user_id = ? AND type = 'expense' AND date BETWEEN ? AND ? GROUP BY category ORDER BY t DESC",
             (user_id, s, e),
         ).fetchall()
 
-        monthly = (end - start).days > 92  # long ranges are grouped by month
-        bucket = "substr(date, 1, 7)" if monthly else "date"  # constant strings, not user input
         rows = conn.execute(
             f"SELECT {bucket} AS label, type, SUM(amount_cents) AS t FROM transactions "
             "WHERE user_id = ? AND date BETWEEN ? AND ? GROUP BY label, type",
             (user_id, s, e),
         ).fetchall()
     else:
-        for r in conn.execute(
-            "SELECT type, SUM(amount_cents) AS t FROM transactions WHERE date BETWEEN ? AND ? GROUP BY type", (s, e)
-        ):
-            totals[r["type"]] = r["t"]
-
         cats = conn.execute(
             "SELECT category, SUM(amount_cents) AS t FROM transactions "
             "WHERE type = 'expense' AND date BETWEEN ? AND ? GROUP BY category ORDER BY t DESC",
             (s, e),
         ).fetchall()
 
-        monthly = (end - start).days > 92  # long ranges are grouped by month
-        bucket = "substr(date, 1, 7)" if monthly else "date"  # constant strings, not user input
         rows = conn.execute(
             f"SELECT {bucket} AS label, type, SUM(amount_cents) AS t FROM transactions "
             "WHERE date BETWEEN ? AND ? GROUP BY label, type",
             (s, e),
         ).fetchall()
+
     series = {l: {"label": l, "income": 0, "expense": 0} for l in _labels(start, end, monthly)}
     for r in rows:
-        series[r["label"]][r["type"]] = r["t"] / 100
+        t_cents = r["t"] or 0
+        rtype = r["type"]
+        if rtype in totals:
+            totals[rtype] += t_cents
+        series[r["label"]][rtype] = t_cents / 100
 
-    return {
+    result = {
         "start": s,
         "end": e,
         "income": totals["income"] / 100,
@@ -92,6 +90,9 @@ def summarize(start, end, user_id=None):
         "by_category": [{"category": r["category"], "total": r["t"] / 100} for r in cats],
         "series": list(series.values()),
     }
+    if user_id is not None:
+        cache.set_cached_summary(user_id, s, e, result)
+    return result
 
 
 def summarize_guest(start, end, guest_id: str):
@@ -102,13 +103,6 @@ def summarize_guest(start, end, guest_id: str):
     s, e = start.isoformat(), end.isoformat()
 
     totals = {"income": 0, "expense": 0}
-    for r in conn.execute(
-        "SELECT type, SUM(amount_cents) AS t FROM guest_transactions "
-        "WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? GROUP BY type",
-        (guest_id, now_iso, s, e),
-    ):
-        totals[r["type"]] = r["t"]
-
     cats = conn.execute(
         "SELECT category, SUM(amount_cents) AS t FROM guest_transactions "
         "WHERE guest_id = ? AND expires_at > ? AND type = 'expense' AND date BETWEEN ? AND ? GROUP BY category ORDER BY t DESC",
@@ -125,7 +119,11 @@ def summarize_guest(start, end, guest_id: str):
 
     series = {l: {"label": l, "income": 0, "expense": 0} for l in _labels(start, end, monthly)}
     for r in rows:
-        series[r["label"]][r["type"]] = r["t"] / 100
+        t_cents = r["t"] or 0
+        rtype = r["type"]
+        if rtype in totals:
+            totals[rtype] += t_cents
+        series[r["label"]][rtype] = t_cents / 100
 
     return {
         "start": s,

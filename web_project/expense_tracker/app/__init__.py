@@ -60,6 +60,10 @@ def create_app(test_config=None):
     # Initialize rate limiter (after blueprints are registered)
     _init_rate_limiter(app)
 
+    # Initialize lightweight request & SQL performance instrumentation
+    from . import perf
+    perf.init_perf(app)
+
     # Add request ID middleware for tracing
     @app.before_request
     def inject_request_id():

@@ -2,13 +2,19 @@
 Money is stored as integer cents to avoid floating-point rounding errors.
 All queries use parameterized (?) placeholders to prevent SQL injection.
 """
+import json
 import logging
 import sqlite3
+import threading
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from flask import current_app, g
+import requests
+from requests.adapters import HTTPAdapter
+from flask import current_app, g, has_app_context
+
+from . import cache, perf
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +53,7 @@ SCHEMA_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)",
     "CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category)",
     "CREATE INDEX IF NOT EXISTS idx_transactions_user_date_type ON transactions(user_id, date, type)",
+    "CREATE INDEX IF NOT EXISTS idx_transactions_user_type_date_cat ON transactions(user_id, type, date, category)",
     """CREATE TABLE IF NOT EXISTS guest_transactions (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     guest_id       TEXT    NOT NULL,
@@ -61,6 +68,7 @@ SCHEMA_STATEMENTS = [
 )""",
     "CREATE INDEX IF NOT EXISTS idx_guest_tx_guest ON guest_transactions(guest_id)",
     "CREATE INDEX IF NOT EXISTS idx_guest_tx_expires ON guest_transactions(expires_at)",
+    "CREATE INDEX IF NOT EXISTS idx_guest_tx_guest_expires_date ON guest_transactions(guest_id, expires_at, date)",
     """CREATE TABLE IF NOT EXISTS audit_log (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id       INTEGER,
@@ -187,6 +195,103 @@ def _sanitize_message(message: str, token: str = "") -> str:
     return message
 
 
+_http_thread_local = threading.local()
+
+
+def _get_turso_http_session() -> requests.Session:
+    """Return a thread-local persistent requests.Session with HTTP Keep-Alive pooling."""
+    sess = getattr(_http_thread_local, "turso_http", None)
+    if sess is None:
+        sess = requests.Session()
+        adapter = HTTPAdapter(pool_connections=4, pool_maxsize=16)
+        sess.mount("https://", adapter)
+        sess.mount("http://", adapter)
+        _http_thread_local.turso_http = sess
+    return sess
+
+
+def _enable_turso_keepalive(conn, auth_token: str):
+    """Replace turso_serverless's per-query urllib.request transport with persistent HTTP Keep-Alive."""
+    session_obj = getattr(conn, "_session", None)
+    if session_obj is None:
+        return
+
+    from turso_serverless.protocol import ProtocolError
+
+    def _keepalive_post(path: str, body: dict) -> bytes:
+        url = f"{session_obj._base_url}{path}"
+        data = json.dumps(body, allow_nan=False).encode("utf-8")
+        http_sess = _get_turso_http_session()
+        try:
+            resp = http_sess.post(
+                url,
+                data=data,
+                headers=session_obj._headers(),
+                timeout=(5.0, 15.0),
+            )
+            if resp.status_code != 200:
+                session_obj._reset_stream()
+                message = None
+                try:
+                    parsed = resp.json()
+                    if isinstance(parsed, dict):
+                        for key in ("error", "message"):
+                            if isinstance(parsed.get(key), str):
+                                message = parsed[key]
+                                break
+                except ValueError:
+                    pass
+                if message is not None:
+                    raise ProtocolError(f"HTTP status {resp.status_code}: {message}") from None
+                raise ProtocolError(f"HTTP status {resp.status_code}") from None
+            return resp.content
+        except requests.RequestException as exc:
+            session_obj._reset_stream()
+            safe_exc = _sanitize_message(str(exc), auth_token)
+            raise ProtocolError(f"request to {url} failed: {safe_exc}") from None
+
+    session_obj._post = _keepalive_post
+
+
+class _InstrumentedConnection:
+    """Lightweight DB-API 2.0 connection wrapper recording SQL execution metrics."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, parameters=()):
+        t0 = time.perf_counter()
+        try:
+            return self._conn.execute(sql, parameters)
+        finally:
+            perf.record_sql_execution(sql, (time.perf_counter() - t0) * 1000.0)
+
+    def executemany(self, sql, seq_of_parameters):
+        t0 = time.perf_counter()
+        try:
+            return self._conn.executemany(sql, seq_of_parameters)
+        finally:
+            perf.record_sql_execution(sql, (time.perf_counter() - t0) * 1000.0)
+
+    def executescript(self, sql_script):
+        t0 = time.perf_counter()
+        try:
+            return self._conn.executescript(sql_script)
+        finally:
+            perf.record_sql_execution("EXECUTESCRIPT", (time.perf_counter() - t0) * 1000.0)
+
+    def commit(self):
+        t0 = time.perf_counter()
+        try:
+            return self._conn.commit()
+        finally:
+            if getattr(self._conn, "in_transaction", False):
+                perf.record_sql_execution("COMMIT", (time.perf_counter() - t0) * 1000.0)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 def _connect_turso(url: str, auth_token: str):
     """Open a connection to Turso using the best available driver with transient error retry."""
     if not url:
@@ -200,6 +305,7 @@ def _connect_turso(url: str, auth_token: str):
             if turso_serverless is not None:
                 conn = turso_serverless.connect(url, auth_token=auth_token or None)
                 conn.row_factory = turso_serverless.Row
+                _enable_turso_keepalive(conn, auth_token or "")
                 return conn
             elif libsql is not None:
                 conn = libsql.connect(database=url, auth_token=auth_token or None)
@@ -268,7 +374,10 @@ def get_db():
                 or current_app.config.get("DATABASE")
                 or "data/tracker.db"
             )
-        g.db = _connect_sqlite(db_path)
+        t0 = time.perf_counter()
+        raw_conn = _connect_sqlite(db_path)
+        perf.record_db_connect((time.perf_counter() - t0) * 1000.0)
+        g.db = _InstrumentedConnection(raw_conn)
         return g.db
 
     if mode == "turso":
@@ -284,7 +393,10 @@ def get_db():
                 "TURSO_AUTH_TOKEN is required for remote Turso connection."
             )
 
-        g.db = _connect_turso(url, token)
+        t0 = time.perf_counter()
+        raw_conn = _connect_turso(url, token)
+        perf.record_db_connect((time.perf_counter() - t0) * 1000.0)
+        g.db = _InstrumentedConnection(raw_conn)
         return g.db
 
     raise ValueError(f"Unsupported DATABASE_MODE: '{mode}'. Must be 'sqlite' or 'turso'.")
@@ -307,8 +419,47 @@ def init_schema(conn=None):
         conn = get_db()
 
     try:
-        for stmt in SCHEMA_STATEMENTS:
-            conn.execute(stmt)
+        # Fast-path: if all required tables already exist, skip 36 redundant DDL statements
+        required_tables = {
+            "users",
+            "transactions",
+            "guest_transactions",
+            "audit_log",
+            "budgets",
+            "recurring_transactions",
+            "financial_goals",
+            "goal_contributions",
+            "subscriptions",
+            "notifications",
+        }
+        existing_rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        existing_tables = {r["name"] if hasattr(r, "keys") else r[0] for r in existing_rows}
+        if required_tables.issubset(existing_tables):
+            # Ensure composite indexes exist on pre-existing databases (idempotent)
+            if has_app_context() and current_app.config.get("DATABASE_MODE") == "turso":
+                conn.executescript(
+                    "CREATE INDEX IF NOT EXISTS idx_transactions_user_type_date_cat "
+                    "ON transactions(user_id, type, date, category);\n"
+                    "CREATE INDEX IF NOT EXISTS idx_guest_tx_guest_expires_date "
+                    "ON guest_transactions(guest_id, expires_at, date);\n"
+                )
+            else:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_transactions_user_type_date_cat "
+                    "ON transactions(user_id, type, date, category)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_guest_tx_guest_expires_date "
+                    "ON guest_transactions(guest_id, expires_at, date)"
+                )
+                conn.commit()
+            return
+
+        if has_app_context() and current_app.config.get("DATABASE_MODE") == "turso" and hasattr(conn, "executescript"):
+            conn.executescript(SCHEMA)
+        else:
+            for stmt in SCHEMA_STATEMENTS:
+                conn.execute(stmt)
 
         # Ensure user_id column exists on transactions table (for pre-existing tables)
         try:
@@ -326,7 +477,6 @@ def init_schema(conn=None):
         except Exception:
             pass
 
-        
         # Ensure payment_method column exists on transactions table
         try:
             cur = conn.execute("PRAGMA table_info(transactions)")
@@ -354,6 +504,8 @@ def init_db(app):
     instead of silently falling back or continuing with an uninitialized database.
     """
     app.teardown_appcontext(close_db)
+    if app.config.get("TESTING", False):
+        cache.clear_all_caches()
 
     is_prod_turso = (
         not app.config.get("TESTING", False)
@@ -459,7 +611,15 @@ def create_user(full_name: str, email: str, password_hash: str, role: str = "use
 
 def get_user_by_id(user_id: int):
     """Fetch a user record by ID (includes password_hash for internal auth checks)."""
-    return get_db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    cached = cache.get_cached_user(user_id)
+    if cached is not None:
+        return dict(cached)
+    row = get_db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is not None:
+        user_dict = dict(row)
+        cache.set_cached_user(user_id, user_dict)
+        return dict(user_dict)
+    return None
 
 
 def get_user_by_email(email: str):
@@ -480,6 +640,7 @@ def update_user(user_id: int, **fields) -> bool:
     conn = get_db()
     cur = conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
     conn.commit()
+    cache.invalidate_user(user_id)
     return cur.rowcount > 0
 
 
@@ -490,6 +651,8 @@ def delete_user(user_id: int) -> bool:
     conn.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
     cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     conn.commit()
+    cache.invalidate_user(user_id)
+    cache.invalidate_user_summary(user_id)
     return cur.rowcount > 0
 
 
@@ -580,6 +743,7 @@ def add_transaction(t, user_id=None):
                 (t["type"], t["amount_cents"], t["category"], t["note"], t["date"]),
             )
     conn.commit()
+    cache.invalidate_user_summary(uid)
     return cur.lastrowid
 
 
@@ -609,27 +773,40 @@ def list_transactions(start, end, user_id=None, page=1, per_page=None):
     conn = get_db()
 
     if user_id is not None:
-        # Count total records for pagination metadata
-        count_row = conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ?",
-            (user_id, s, e),
-        ).fetchone()
-        total = count_row[0] if count_row else 0
-
         rows = conn.execute(
-            "SELECT * FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            "SELECT id, user_id, type, amount_cents, category, note, date, payment_method, "
+            "COUNT(*) OVER() AS _total_count "
+            "FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ? "
+            "ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
             (user_id, s, e, per_page, offset),
         ).fetchall()
+        if rows:
+            total = rows[0]["_total_count"]
+        elif page > 1:
+            count_row = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE user_id = ? AND date BETWEEN ? AND ?",
+                (user_id, s, e),
+            ).fetchone()
+            total = count_row[0] if count_row else 0
+        else:
+            total = 0
     else:
-        count_row = conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE date BETWEEN ? AND ?", (s, e)
-        ).fetchone()
-        total = count_row[0] if count_row else 0
-
         rows = conn.execute(
-            "SELECT * FROM transactions WHERE date BETWEEN ? AND ? ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            "SELECT id, user_id, type, amount_cents, category, note, date, payment_method, "
+            "COUNT(*) OVER() AS _total_count "
+            "FROM transactions WHERE date BETWEEN ? AND ? "
+            "ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
             (s, e, per_page, offset),
         ).fetchall()
+        if rows:
+            total = rows[0]["_total_count"]
+        elif page > 1:
+            count_row = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE date BETWEEN ? AND ?", (s, e)
+            ).fetchone()
+            total = count_row[0] if count_row else 0
+        else:
+            total = 0
 
     return {
         "transactions": rows,
@@ -671,6 +848,8 @@ def update_transaction(tx_id, t, user_id=None) -> bool:
                 (t["type"], t["amount_cents"], t["category"], t["note"], t["date"], tx_id),
             )
     conn.commit()
+    if cur.rowcount > 0:
+        cache.invalidate_user_summary(user_id)
     return cur.rowcount > 0
 
 
@@ -682,6 +861,8 @@ def delete_transaction(tx_id, user_id=None):
     else:
         cur = conn.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
     conn.commit()
+    if cur.rowcount > 0:
+        cache.invalidate_user_summary(user_id)
     return cur.rowcount > 0
 
 
@@ -724,29 +905,41 @@ def list_guest_transactions(guest_id: str, start=None, end=None, page=1, per_pag
 
     if start and end:
         s, e = start.isoformat(), end.isoformat()
-        count_row = conn.execute(
-            "SELECT COUNT(*) FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ?",
-            (guest_id, now_iso, s, e),
-        ).fetchone()
-        total = count_row[0] if count_row else 0
-
         rows = conn.execute(
-            "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? "
+            "SELECT id, guest_id, type, amount_cents, category, note, payment_method, date, expires_at, "
+            "COUNT(*) OVER() AS _total_count "
+            "FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ? "
             "ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
             (guest_id, now_iso, s, e, per_page, offset),
         ).fetchall()
+        if rows:
+            total = rows[0]["_total_count"]
+        elif page > 1:
+            count_row = conn.execute(
+                "SELECT COUNT(*) FROM guest_transactions WHERE guest_id = ? AND expires_at > ? AND date BETWEEN ? AND ?",
+                (guest_id, now_iso, s, e),
+            ).fetchone()
+            total = count_row[0] if count_row else 0
+        else:
+            total = 0
     else:
-        count_row = conn.execute(
-            "SELECT COUNT(*) FROM guest_transactions WHERE guest_id = ? AND expires_at > ?",
-            (guest_id, now_iso),
-        ).fetchone()
-        total = count_row[0] if count_row else 0
-
         rows = conn.execute(
-            "SELECT * FROM guest_transactions WHERE guest_id = ? AND expires_at > ? "
+            "SELECT id, guest_id, type, amount_cents, category, note, payment_method, date, expires_at, "
+            "COUNT(*) OVER() AS _total_count "
+            "FROM guest_transactions WHERE guest_id = ? AND expires_at > ? "
             "ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
             (guest_id, now_iso, per_page, offset),
         ).fetchall()
+        if rows:
+            total = rows[0]["_total_count"]
+        elif page > 1:
+            count_row = conn.execute(
+                "SELECT COUNT(*) FROM guest_transactions WHERE guest_id = ? AND expires_at > ?",
+                (guest_id, now_iso),
+            ).fetchone()
+            total = count_row[0] if count_row else 0
+        else:
+            total = 0
 
     return {
         "transactions": rows,
@@ -1042,19 +1235,58 @@ def get_budget_utilization(user_id: int, budget_id: int, start: date, end: date)
 
 
 def get_all_budget_utilizations(user_id: int, start: date, end: date, auto_period: bool = False) -> list:
-    """Get utilization for all active budgets in a period."""
+    """Get utilization for all active budgets in a period without N+1 queries."""
     from datetime import timedelta
     budgets = list_budgets(user_id, is_active=1)
-    results = []
+    if not budgets:
+        return []
+
+    conn = get_db()
     today = date.today()
+    # Group budgets by their effective (start, end) range so each range runs 1 SQL query
+    range_cache: dict[tuple[str, str], dict] = {}
+    results = []
+
     for b in budgets:
         b_start, b_end = start, end
         if auto_period and b["period"] == "weekly":
             b_start = today - timedelta(days=today.weekday())
             b_end = b_start + timedelta(days=6)
-        util = get_budget_utilization(user_id, b["id"], b_start, b_end)
-        if util:
-            results.append(util)
+        s, e = b_start.isoformat(), b_end.isoformat()
+
+        if (s, e) not in range_cache:
+            cat_rows = conn.execute(
+                """SELECT category, SUM(amount_cents) AS total FROM transactions
+                   WHERE user_id = ? AND date BETWEEN ? AND ? AND type = 'expense'
+                   GROUP BY category""",
+                (user_id, s, e),
+            ).fetchall()
+            by_cat = {r["category"]: (r["total"] or 0) for r in cat_rows}
+            overall = sum(by_cat.values())
+            range_cache[(s, e)] = {"by_cat": by_cat, "overall": overall}
+
+        totals = range_cache[(s, e)]
+        category = b["category"]
+        spent = totals["by_cat"].get(category, 0) if category else totals["overall"]
+        budget_amount = b["amount_cents"]
+        utilization_pct = (spent / budget_amount * 100) if budget_amount > 0 else 0
+
+        results.append({
+            "budget_id": b["id"],
+            "budget_name": b["name"],
+            "period": b["period"],
+            "category": category,
+            "budget_amount": budget_amount / 100,
+            "spent": spent / 100,
+            "remaining": (budget_amount - spent) / 100,
+            "budget_amount_cents": budget_amount,
+            "spent_cents": spent,
+            "remaining_cents": budget_amount - spent,
+            "utilization_pct": round(utilization_pct, 2),
+            "warning_threshold": b["warning_threshold"],
+            "is_warning": utilization_pct >= b["warning_threshold"],
+            "is_exceeded": utilization_pct >= 100,
+        })
     return results
 
 
