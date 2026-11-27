@@ -184,19 +184,21 @@ document.addEventListener("DOMContentLoaded", () => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
           });
-      cancelEdit();
-    } else {
-      await api("/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      form.amount.value = "";
-      form.note.value = "";
-    }
-    say("");
-    refresh();
-  } catch (err) { say(err.message); }
+          cancelEdit();
+        } else {
+          await api("/transactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          form.amount.value = "";
+          form.note.value = "";
+        }
+        say("");
+        refresh();
+      } catch (err) { say(err.message); }
+    });
+  }
 });
 
 // ============================================================================
@@ -356,6 +358,17 @@ document.addEventListener("DOMContentLoaded", () => {
     refresh();
   });
 
+  if (!isGuest) {
+    api("/notifications/unread-count").then(unread => {
+      const count = unread?.unread_count ?? 0;
+      const badge = $("#notif-badge");
+      if (badge) {
+        badge.textContent = count > 99 ? "99+" : String(count);
+        badge.hidden = count <= 0;
+      }
+    }).catch(() => {});
+  }
+
   // Import form submission
   importForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -399,6 +412,9 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function renderImportSummary(result) {
+  const importSummary = $("#import-summary");
+  if (!importSummary) return;
+  const esc = window.EtUtils?.escapeHtml || ((s) => String(s ?? ""));
   const { success_count, rejected_count, errors } = result;
   const isErr = success_count === 0 && rejected_count > 0;
   let html = `
@@ -407,14 +423,14 @@ function renderImportSummary(result) {
         <span class="badge badge-success">✓ ${success_count} Added</span>
         ${rejected_count > 0 ? `<span class="badge badge-warning">⚠ ${rejected_count} Rejected</span>` : ""}
       </div>
-      <p class="summary-msg">${result.message || "Import completed."}</p>
+      <p class="summary-msg">${esc(result.message || "Import completed.")}</p>
   `;
   if (errors && errors.length > 0) {
     html += `
       <details class="summary-details">
         <summary>View ${errors.length} rejected row(s)</summary>
         <ul class="error-list">
-          ${errors.map((e) => `<li><strong>Row ${e.row}:</strong> ${e.error}</li>`).join("")}
+          ${errors.map((e) => `<li><strong>Row ${e.row}:</strong> ${esc(e.error)}</li>`).join("")}
         </ul>
       </details>
     `;

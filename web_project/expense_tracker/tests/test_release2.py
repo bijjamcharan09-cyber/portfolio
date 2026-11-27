@@ -880,3 +880,153 @@ class TestRelease2Integration:
 
             # Direct access should 404
             assert other_client.get(f"{endpoint}/{item_id}").status_code == 404
+
+
+class TestRelease2BugFixesRegression:
+    """Regression tests verifying frontend/backend integration fixes across all 6 Release 2 modules."""
+
+    def test_release2_pages_render_and_etutils_safe(self, client):
+        """All 6 Release 2 pages render cleanly and do not access document.body in <head>."""
+        for route in ("/budgets", "/recurring", "/goals", "/subscriptions", "/forecast", "/notifications"):
+            resp = client.get(route)
+            assert resp.status_code == 200
+            html = resp.get_data(as_text=True)
+            assert "window.EtUtils.apiBase" in html
+            assert "document.body.dataset.guest" not in html
+
+    def test_init_schema_creates_release2_tables_without_migrations(self, tmp_path):
+        """Fresh DB initialized via init_schema() alone contains all Release 2 tables."""
+        from app import create_app, db
+        fresh_app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "fresh_r2.db")})
+        with fresh_app.app_context():
+            conn = db.get_db()
+            tables = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+            for expected in (
+                "budgets",
+                "recurring_transactions",
+                "financial_goals",
+                "goal_contributions",
+                "subscriptions",
+                "notifications",
+            ):
+                assert expected in tables
+
+    def test_budget_utilization_includes_cents_fields(self, client):
+        """Budget utilization returns both currency floats and *_cents integers."""
+        today = date.today()
+        client.post("/api/budgets", json={
+            "name": "Cents Check",
+            "period": "monthly",
+            "category": "Food",
+            "amount": "200.00",
+            "start_date": today.replace(day=1).isoformat(),
+        })
+        client.post("/api/transactions", json={
+            "type": "expense", "amount": "50.00", "category": "Food", "date": today.isoformat()
+        })
+        resp = client.get("/api/budgets/utilization")
+        assert resp.status_code == 200
+        u = resp.get_json()["budgets"][0]
+        assert u["budget_amount_cents"] == 20000
+        assert u["spent_cents"] == 5000
+        assert u["remaining_cents"] == 15000
+
+    def test_recurring_auto_process_and_no_duplicates(self, client):
+        """Listing or processing due recurring transactions generates once and never duplicates."""
+        today = date.today().isoformat()
+        create_resp = client.post("/api/recurring", json={
+            "type": "expense",
+            "amount": "75.00",
+            "category": "Bills",
+            "frequency": "monthly",
+            "start_date": today,
+            "next_due_date": today,
+            "note": "Internet Bill",
+        })
+        assert create_resp.status_code == 201
+
+        # First GET /api/recurring auto-processes due item
+        list_resp = client.get("/api/recurring")
+        assert list_resp.status_code == 200
+        rt = list_resp.get_json()["recurring"][0]
+        assert rt["last_generated"] == today
+        assert rt["next_due_date"] > today
+
+        # Second POST /api/recurring/process on same day generates 0 duplicates
+        proc_resp = client.post("/api/recurring/process")
+        assert proc_resp.status_code == 200
+        assert proc_resp.get_json()["count"] == 0
+
+        # Verify only 1 transaction was created
+        tx_resp = client.get(f"/api/transactions?period=month&date={today}")
+        tx_data = tx_resp.get_json()
+        tx_list = tx_data["transactions"] if isinstance(tx_data, dict) else tx_data
+        internet_txs = [t for t in tx_list if t["note"] == "Internet Bill"]
+        assert len(internet_txs) == 1
+
+    def test_goal_contribution_triggers_milestone_notification(self, client):
+        """Adding a contribution that crosses 50% creates a milestone notification on check."""
+        goal_resp = client.post("/api/goals", json={
+            "name": "Laptop Fund",
+            "target_amount": "1000.00",
+        })
+        goal_id = goal_resp.get_json()["id"]
+
+        contrib_resp = client.post(f"/api/goals/{goal_id}/contributions", json={
+            "amount": "600.00",
+            "date": date.today().isoformat(),
+        })
+        assert contrib_resp.status_code == 201
+
+        check_resp = client.post("/api/notifications/check")
+        assert check_resp.status_code == 200
+
+        notif_resp = client.get("/api/notifications")
+        notifs = notif_resp.get_json()["notifications"]
+        assert any(n["type"] == "goal_milestone" and "Laptop Fund" in n["title"] for n in notifs)
+
+    def test_subscription_upcoming_days_ahead_and_totals_currency(self, client):
+        """Upcoming renewals accept days_ahead and totals include currency."""
+        today = date.today()
+        client.post("/api/subscriptions", json={
+            "name": "Cloud Storage",
+            "amount": "199.00",
+            "billing_cycle": "monthly",
+            "renewal_date": (today + timedelta(days=5)).isoformat(),
+        })
+        up_resp = client.get("/api/subscriptions/upcoming?days_ahead=30")
+        assert up_resp.status_code == 200
+        assert len(up_resp.get_json()["subscriptions"]) == 1
+
+        tot_resp = client.get("/api/subscriptions/totals")
+        assert tot_resp.status_code == 200
+        assert "currency" in tot_resp.get_json()
+
+    def test_forecast_24_months_and_history_series(self, client):
+        """Forecast with months=24 does not fail on negative start_month and returns history."""
+        today = date.today()
+        # Seed transactions across 2 different months
+        prev_month = (today.replace(day=1) - timedelta(days=5))
+        client.post("/api/transactions", json={
+            "type": "income", "amount": "3000.00", "category": "Salary", "date": prev_month.isoformat()
+        })
+        client.post("/api/transactions", json={
+            "type": "expense", "amount": "1200.00", "category": "Food", "date": prev_month.isoformat()
+        })
+        client.post("/api/transactions", json={
+            "type": "income", "amount": "3200.00", "category": "Salary", "date": today.isoformat()
+        })
+        client.post("/api/transactions", json={
+            "type": "expense", "amount": "1100.00", "category": "Food", "date": today.isoformat()
+        })
+
+        resp = client.get("/api/forecast?months=24")
+        assert resp.status_code == 200
+        forecast = resp.get_json()["forecast"]
+        assert forecast is not None
+        assert len(forecast["history"]) >= 2
+        assert "predicted_income" in forecast
+        assert "predicted_expense" in forecast
